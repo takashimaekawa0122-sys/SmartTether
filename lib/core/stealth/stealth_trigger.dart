@@ -131,7 +131,7 @@ class StealthTriggerNotifier extends StateNotifier<StealthAction?> {
   ///
   /// データ形式: 先頭バイトがボタン値（0x01 / 0x02 / 0x03）
   void _onData(List<int> data) {
-    if (data.isEmpty) return;
+    if (!mounted || data.isEmpty) return;
 
     final buttonValue = data[0];
     final action = _buttonValueToAction(buttonValue);
@@ -253,6 +253,8 @@ final stealthTriggerProvider =
   ref.listen<AsyncValue<BleConnectionState>>(
     bleConnectionStateProvider,
     (_, next) {
+      // dispose後にコールバックが来た場合は無視する
+      if (!notifier.mounted) return;
       next.whenData((connectionState) {
         if (connectionState == BleConnectionState.connected) {
           notifier.startListening();

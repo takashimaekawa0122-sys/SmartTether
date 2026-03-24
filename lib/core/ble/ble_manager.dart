@@ -43,7 +43,13 @@ class BleFailure<T> extends BleResult<T> {
 ///
 /// 注意: flutter_reactive_ble はメインIsolateで動作すること。
 class BleManager {
-  final _ble = FlutterReactiveBle();
+  /// テスト用: [FlutterReactiveBle] を外部から注入できる。
+  /// 省略時は実機向けインスタンスを生成する。
+  BleManager({FlutterReactiveBle? ble}) : _ble = ble ?? FlutterReactiveBle() {
+    _authenticator = BandAuthenticator(_ble);
+  }
+
+  final FlutterReactiveBle _ble;
   late final BandAuthenticator _authenticator;
   final _rssiSmoother = RSSISmoother();
 
@@ -59,9 +65,6 @@ class BleManager {
   bool _disposed = false;
   String? _currentDeviceId;
 
-  BleManager() {
-    _authenticator = BandAuthenticator(_ble);
-  }
 
   /// 接続状態のストリーム
   Stream<BleConnectionState> get connectionStateStream =>

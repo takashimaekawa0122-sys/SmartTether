@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/ble/ble_manager.dart';
 import '../../core/security/app_secrets.dart';
+import '../../core/stealth/stealth_trigger.dart';
 import '../../core/tether/alert_state.dart';
 import '../../core/timeline/timeline_entry.dart';
 import '../../core/timeline/timeline_logger.dart';
@@ -161,6 +162,11 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
 
   @override
   Widget build(BuildContext context) {
+    // BLE接続完了と同時にステルストリガー監視を起動する。
+    // stealthTriggerProvider は内部で bleConnectionStateProvider を listen して
+    // 自動的に開始・停止するため、ref.watch するだけで十分。
+    ref.watch(stealthTriggerProvider);
+
     final tetherStateAsync = ref.watch(tetherStateStreamProvider);
     final tetherState = tetherStateAsync.valueOrNull;
     final dotColor = _dotColorForState(tetherState);

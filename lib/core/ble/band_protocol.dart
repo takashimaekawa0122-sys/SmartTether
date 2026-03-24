@@ -90,12 +90,12 @@ class AuthCommands {
 class MediaControlButton {
   MediaControlButton._();
 
-  /// ダブルタップ（次の曲）→ LEDフラッシュ
+  /// ダブルタップ（次の曲）→ ボイスメモ開始/停止
   static const int doubleTab = 0x01;
 
-  /// トリプルタップ（前の曲）→ ボイスメモ録音
+  /// トリプルタップ（前の曲）→ 緊急アラート送信
   static const int tripleTab = 0x02;
 
-  /// 長押し（再生/停止）→ スマートエスケープ
+  /// 長押し（再生/停止）→ 「今は安全」手動通知
   static const int longPress = 0x03;
 }

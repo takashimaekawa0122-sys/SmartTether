@@ -284,7 +284,15 @@ class VoiceMemoRecorder {
       if (isAutoSplit) {
         // ignore: avoid_print
         print('[VoiceMemoRecorder] 次のチャンク録音を開始します');
-        await startRecording();
+        final chunkStarted = await startRecording();
+        if (!chunkStarted) {
+          // ignore: avoid_print
+          print('[VoiceMemoRecorder] チャンク再開失敗');
+          await _timelineLogger.log(
+            TimelineEventType.warning,
+            'ボイスメモのチャンク再開に失敗しました',
+          );
+        }
       }
 
       return result;

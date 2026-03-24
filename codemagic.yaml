@@ -1,12 +1,12 @@
 workflows:
 
   # ─────────────────────────────────────────────
-  # iOS ビルド確認用（署名なし）
+  # iOS AltStore用ビルド（署名なし IPA）
+  # AltStoreが手元のApple IDで再署名してインストールする。
   # 無料Apple Developerアカウント向け。
-  # コンパイルが通るか確認するためのビルド。
   # ─────────────────────────────────────────────
-  ios-no-sign:
-    name: iOS ビルド確認（署名なし）
+  ios-altstore:
+    name: iOS AltStore用ビルド（署名なし）
     max_build_duration: 60
 
     instance_type: mac_mini_m2
@@ -17,17 +17,19 @@ workflows:
       cocoapods: default
       vars:
         BUNDLE_ID: com.smarttether.smartTether
+        XCODE_SCHEME: Runner
+        XCODE_WORKSPACE: ios/Runner.xcworkspace
 
     scripts:
       # 1. Flutter依存パッケージを取得
       - name: Flutter パッケージ取得
         script: flutter pub get
 
-      # 2. 静的解析（エラーがないことを確認）
+      # 2. 静的解析
       - name: Flutter 静的解析
         script: flutter analyze --no-pub
 
-      # 3. ユニットテスト実行
+      # 3. ユニットテスト
       - name: Flutter テスト
         script: flutter test --no-pub
 
@@ -37,13 +39,23 @@ workflows:
           cd ios
           pod install
 
-      # 5. 署名なしでビルド（コンパイル確認のみ）
+      # 5. 署名なしでリリースビルド
       - name: iOS ビルド（署名なし）
         script: flutter build ios --release --no-codesign
 
-    # ビルド成果物（.appファイル）
+      # 6. .app → .ipa に変換（AltStore用）
+      # AltStore は IPA ファイルを受け取り、手元の Apple ID で再署名して端末にインストールする。
+      - name: IPA 作成（AltStore用）
+        script: |
+          mkdir -p build/ios/altstore/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/altstore/Payload/
+          cd build/ios/altstore
+          zip -r SmartTether.ipa Payload/
+          echo "✅ SmartTether.ipa を作成しました"
+
+    # ビルド成果物
     artifacts:
-      - build/ios/iphoneos/Runner.app
+      - build/ios/altstore/SmartTether.ipa
       - /tmp/xcodebuild_logs/*.log
 
     publishing:

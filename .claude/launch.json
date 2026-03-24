@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Flutter Run (Debug)",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "C:\\flutter\\bin\\flutter.bat", "run", "--debug"],
+      "port": 8181
+    },
+    {
+      "name": "build_runner watch",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "C:\\flutter\\bin\\flutter.bat", "pub", "run", "build_runner", "watch", "--delete-conflicting-outputs"],
+      "port": 8182
+    },
+    {
+      "name": "Flutter Test",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "C:\\flutter\\bin\\flutter.bat", "test", "--reporter", "expanded"],
+      "port": 8183
+    }
+  ]
+}

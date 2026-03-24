@@ -1,0 +1,66 @@
+workflows:
+
+  # ─────────────────────────────────────────────
+  # iOS 実機インストール用ビルド（Ad-hoc）
+  # ─────────────────────────────────────────────
+  ios-adhoc:
+    name: iOS Ad-hoc（実機インストール）
+    max_build_duration: 60
+
+    # ビルドを動かすマシン（macOS）
+    instance_type: mac_mini_m2
+
+    environment:
+      flutter: 3.29.2
+      xcode: latest
+      cocoapods: default
+
+      # Codemagicダッシュボードの「Code signing identities」で設定した
+      # Apple Developer 証明書・プロビジョニングプロファイルを参照する
+      ios_signing:
+        distribution_type: ad_hoc
+        bundle_identifier: com.smarttether.smartTether
+
+      # Codemagicダッシュボードの「Environment variables」に追加した変数
+      vars:
+        BUNDLE_ID: com.smarttether.smartTether
+        XCODE_WORKSPACE: ios/Runner.xcworkspace
+        XCODE_SCHEME: Runner
+
+    scripts:
+      # 1. Flutter依存パッケージを取得
+      - name: Flutter パッケージ取得
+        script: flutter pub get
+
+      # 2. CocoaPods（iOSネイティブライブラリ）をインストール
+      - name: CocoaPods インストール
+        script: |
+          cd ios
+          pod install
+
+      # 3. コード署名を自動設定（Codemagicが証明書を注入）
+      - name: コード署名の設定
+        script: |
+          xcode-project use-profiles
+
+      # 4. Flutter アプリをビルド（Ad-hoc IPA）
+      - name: iOS ビルド
+        script: |
+          flutter build ios --release --no-codesign
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
+
+    # ビルド成果物（IPAファイル）
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    # ビルド完了後にメール通知（Codemagicダッシュボードでメアドを設定）
+    publishing:
+      email:
+        recipients:
+          - takashi.maekawa0122@gmail.com
+        notify:
+          success: true
+          failure: true

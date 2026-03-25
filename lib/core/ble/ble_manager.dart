@@ -216,13 +216,20 @@ class BleManager {
 
               switch (update.connectionState) {
                 case DeviceConnectionState.connected:
-                  // 接続成功 → 全サービスを探索してログ出力（UUID確認用）
+                  // 接続成功 → 全サービスを探索してダイアログ表示（UUID確認用）
                   try {
                     await _ble.discoverAllServices(deviceId);
                     final services = await _ble.getDiscoveredServices(deviceId);
                     final buf = StringBuffer('=== Band 9 BLE Services ===\n');
+                    if (services.isEmpty) {
+                      buf.writeln('(サービスが見つかりませんでした)');
+                    }
                     for (final s in services) {
-                      buf.writeln('$s');
+                      buf.writeln('Service: ${s.id}');
+                      for (final c in s.characteristics) {
+                        buf.writeln('  Char: ${c.id}');
+                        buf.writeln('    props: ${c.isReadable ? 'R' : ''}${c.isWritableWithResponse ? 'W' : ''}${c.isWritableWithoutResponse ? 'w' : ''}${c.isNotifiable ? 'N' : ''}${c.isIndicatable ? 'I' : ''}');
+                      }
                     }
                     final log = buf.toString();
                     // ignore: avoid_print
@@ -233,7 +240,17 @@ class BleManager {
                   } catch (e) {
                     // ignore: avoid_print
                     print('[BleManager] サービス探索エラー: $e');
+                    // エラーもダイアログで表示する（iOSでよく発生するためUIに出す）
+                    if (!_diagnosticController.isClosed) {
+                      _diagnosticController.add(
+                        '=== サービス探索エラー ===\n$e\n\ndeviceId: $deviceId',
+                      );
+                    }
                   }
+
+                  // 診断ダイアログが表示される時間を確保してから認証フェーズへ
+                  await Future<void>.delayed(const Duration(milliseconds: 500));
+                  if (_disposed) return;
 
                   // 認証フェーズへ
                   _updateState(BleConnectionState.authenticating);

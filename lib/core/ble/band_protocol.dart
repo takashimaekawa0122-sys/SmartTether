@@ -114,10 +114,10 @@ class MediaControlButton {
   MediaControlButton._();
 
   /// 次の曲（ダブルタップ相当）→ ボイスメモ開始/停止
-  static const int doubleTab = 0x04;
+  static const int doubleTap = 0x04;
 
   /// 前の曲（トリプルタップ相当）→ 緊急アラート送信
-  static const int tripleTab = 0x03;
+  static const int tripleTap = 0x03;
 
   /// 再生/停止（長押し相当）→ 「今は安全」手動通知
   static const int longPress = 0x01;

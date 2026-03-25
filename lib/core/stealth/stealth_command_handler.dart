@@ -24,7 +24,7 @@ import 'voice_memo_recorder.dart';
 /// final handler = ref.read(stealthCommandHandlerProvider);
 ///
 /// // BLEイベント受信時
-/// await handler.handleCommand(StealthCommandHandler.cmdDoubleTab);
+/// await handler.handleCommand(StealthCommandHandler.cmdDoubleTap);
 ///
 /// // エスケープタイマー起動
 /// await handler.startEscapeTimer(
@@ -38,10 +38,10 @@ class StealthCommandHandler {
   // =========================================================
 
   /// ダブルタップ → ボイスメモ（録音開始 or 停止・文字起こし）
-  static const int cmdDoubleTab = MediaControlButton.doubleTab;
+  static const int cmdDoubleTap = MediaControlButton.doubleTap;
 
   /// トリプルタップ → フラッシュSOSパターン（band_protocol.dart の値を使用）
-  static const int cmdTripleTab = MediaControlButton.tripleTab;
+  static const int cmdTripleTap = MediaControlButton.tripleTap;
 
   /// 長押し → エスケープタイマー起動
   static const int cmdLongPress = MediaControlButton.longPress;
@@ -81,17 +81,17 @@ class StealthCommandHandler {
   /// [command] : BLEメディアコントロールボタンから受信したコマンド値
   ///
   /// コマンドと動作の対応:
-  /// - [cmdDoubleTab] (0x01) : 録音中なら停止・文字起こし、停止中なら録音開始
-  /// - [cmdTripleTab] (0x02) : フラッシュSOSパターン点滅
+  /// - [cmdDoubleTap] (0x04) : 録音中なら停止・文字起こし、停止中なら録音開始
+  /// - [cmdTripleTap] (0x03) : フラッシュSOSパターン点滅
   /// - 不明なコマンド : 無視する
   ///
-  /// 注: [cmdLongPress] (0x04) はエスケープタイマーとして使用するが、
+  /// 注: [cmdLongPress] (0x01) はエスケープタイマーとして使用するが、
   /// このメソッドでは処理しない。呼び出し側が [startEscapeTimer] を直接呼ぶこと。
   Future<void> handleCommand(int command) async {
     switch (command) {
-      case cmdDoubleTab:
+      case cmdDoubleTap:
         await _handleVoiceMemo();
-      case cmdTripleTab:
+      case cmdTripleTap:
         await _handleFlash();
       default:
         // 未知のコマンドは無視する（将来の拡張に備えてログのみ出力）
@@ -150,7 +150,7 @@ class StealthCommandHandler {
   // プライベートメソッド
   // =========================================================
 
-  /// ダブルタップ処理: フラッシュSOSパターンを実行してタイムラインに記録する
+  /// トリプルタップ処理: フラッシュSOSパターンを実行してタイムラインに記録する
   Future<void> _handleFlash() async {
     try {
       // ignore: avoid_print

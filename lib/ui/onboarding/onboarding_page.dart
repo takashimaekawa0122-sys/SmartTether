@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/security/app_secrets.dart';
-import '../timeline/timeline_page.dart';
-import '../alert/alert_overlay.dart';
+import '../home_stack.dart';
 
 /// オンボーディング完了フラグのキー
 const _kOnboardingDoneKey = 'onboarding_done';
@@ -56,7 +55,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) => const _HomeStack(),
+          builder: (_) => const HomeStack(),
         ),
       );
     }
@@ -389,21 +388,3 @@ class _DotIndicator extends StatelessWidget {
   }
 }
 
-// ============================================================
-// メイン画面スタック（TimelinePage + AlertOverlay）
-// ============================================================
-
-/// オンボーディング完了後に遷移するホーム画面
-class _HomeStack extends StatelessWidget {
-  const _HomeStack();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Stack(
-      children: [
-        TimelinePage(),
-        AlertOverlayController(),
-      ],
-    );
-  }
-}

@@ -64,6 +64,18 @@ class AppSecrets {
     return authKey != null && macAddress != null && apiKey != null;
   }
 
+  /// Band 9 の設定（MACアドレス・Auth Key）が実際の値かどうか確認する
+  ///
+  /// プレースホルダー（'XX:XX:XX:XX:XX:XX' / 'X'）は未設定とみなす。
+  static Future<bool> isBandConfigured() async {
+    final mac = await getBandMacAddress();
+    final authKey = await getBandAuthKey();
+    return mac != null &&
+        mac != 'XX:XX:XX:XX:XX:XX' &&
+        authKey != null &&
+        authKey != 'X';
+  }
+
   // ===== デバイス認証情報シード（実機セットアップ）=====
 
   /// 実機の認証情報をKeychain/Keystoreに書き込む（未設定時のみ）

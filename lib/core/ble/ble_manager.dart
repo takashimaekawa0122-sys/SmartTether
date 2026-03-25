@@ -63,8 +63,6 @@ class BleManager {
 
   int _retryCount = 0;
   bool _disposed = false;
-  // TODO: V2プロトコル実装後に認証を有効化
-  final bool _isAuthenticating = false;
   String? _currentDeviceId;
 
 
@@ -228,8 +226,6 @@ class BleManager {
                   if (!completer.isCompleted) completer.complete(const BleSuccess(null));
 
                 case DeviceConnectionState.disconnected:
-                  // 認証中の切断イベントは認証完了後に処理されるため無視する
-                  if (_isAuthenticating) break;
                   _rssiTimer?.cancel();
                   _rssiSmoother.reset();
                   if (!completer.isCompleted) {

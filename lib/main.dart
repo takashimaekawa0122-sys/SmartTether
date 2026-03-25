@@ -5,9 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/security/app_secrets.dart';
 import 'services/background_service.dart';
 import 'services/notification_service.dart';
-import 'ui/alert/alert_overlay.dart';
+import 'ui/home_stack.dart';
 import 'ui/onboarding/onboarding_page.dart';
-import 'ui/timeline/timeline_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,24 +62,6 @@ void main() async {
   );
 }
 
-/// TimelinePage の上に AlertOverlayController を重ねるルートスタック
-///
-/// AlertOverlayController は tetherStateStreamProvider を監視して
-/// 警告状態になると自動的に全画面オーバーレイを表示する。
-class _HomeStack extends StatelessWidget {
-  const _HomeStack();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Stack(
-      children: [
-        TimelinePage(),
-        AlertOverlayController(),
-      ],
-    );
-  }
-}
-
 class SmartTetherApp extends StatelessWidget {
   final bool showOnboarding;
 
@@ -101,7 +82,7 @@ class SmartTetherApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: showOnboarding ? const OnboardingPage() : const _HomeStack(),
+      home: showOnboarding ? const OnboardingPage() : const HomeStack(),
     );
   }
 }

@@ -110,12 +110,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
     }
 
     // 開始：Band 9 設定チェック
-    final mac = await AppSecrets.getBandMacAddress();
-    final authKey = await AppSecrets.getBandAuthKey();
-    final isConfigured = mac != null &&
-        mac != 'XX:XX:XX:XX:XX:XX' &&
-        authKey != null &&
-        authKey != 'X';
+    final isConfigured = await AppSecrets.isBandConfigured();
 
     if (!isConfigured) {
       if (mounted) {

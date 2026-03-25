@@ -115,7 +115,7 @@ class TimelineEntry {
     transcription: json['transcription'] as String?,
     audioFilePath: json['audioFilePath'] as String?,
     audioDuration: json['audioDurationMs'] != null
-        ? Duration(milliseconds: json['audioDurationMs'] as int)
+        ? Duration(milliseconds: (json['audioDurationMs'] as num).toInt())
         : null,
   );
 }

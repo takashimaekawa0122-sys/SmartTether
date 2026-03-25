@@ -32,6 +32,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
   Future<void> _loadDeviceInfo() async {
     final mac = await AppSecrets.getBandMacAddress();
     final authKey = await AppSecrets.getBandAuthKey();
+    if (!mounted) return;
     setState(() {
       // MACアドレスの末尾8文字（例: 23:38:E3）
       if (mac != null && mac.length >= 8) {

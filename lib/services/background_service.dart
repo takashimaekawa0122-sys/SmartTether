@@ -93,16 +93,23 @@ void onStart(ServiceInstance service) async {
 
   // ---- BleManager からの RSSI 受信リスナー ----
   // メインIsolateの BleManager が invoke('rssiUpdate') した値をここで受け取る
+  // 注意: メインIsolate側で既にスムージング済みの値が送られてくるため、
+  //       ここでは二重スムージングせず smoothedValue のみ更新する
   service.on('rssiUpdate').listen((data) {
-    final rssi = data?['rssi'] as double?;
+    // IPC経由のJSONでは int が来る可能性があるため num 経由で変換する
+    final rssi = (data?['rssi'] as num?)?.toDouble();
     if (rssi != null) {
-      rssiSmoother.addValue(rssi.round());
+      rssiSmoother.setDirectValue(rssi.round());
     }
   });
 
   // ---- 停止コマンドのリスナー ----
   // UIから 'stopService' イベントを受け取ったらサービスを停止する
+  // monitorTimer は監視ループの参照（停止時にキャンセルするため）
+  Timer? monitorTimer;
+
   service.on('stopService').listen((_) async {
+    monitorTimer?.cancel();
     try {
       await timelineLogger.log(
         TimelineEventType.monitoringStopped,
@@ -118,7 +125,7 @@ void onStart(ServiceInstance service) async {
   //   - バッテリー消費を抑える
   //   - 置き忘れ検知の応答性と省電力のバランスが取れている
   //   - Band9到着後、BLE RSSI取得に切り替えても同じ間隔を維持できる
-  Timer.periodic(const Duration(seconds: 30), (timer) async {
+  monitorTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
     try {
       await _performMonitoringCycle(
         service: service,

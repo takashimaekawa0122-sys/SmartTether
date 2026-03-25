@@ -37,10 +37,10 @@ class StealthCommandHandler {
   // コマンド定数
   // =========================================================
 
-  /// ダブルタップ → フラッシュSOSパターン（band_protocol.dart の値を使用）
+  /// ダブルタップ → ボイスメモ（録音開始 or 停止・文字起こし）
   static const int cmdDoubleTab = MediaControlButton.doubleTab;
 
-  /// トリプルタップ → ボイスメモ（録音開始 or 停止・文字起こし）
+  /// トリプルタップ → フラッシュSOSパターン（band_protocol.dart の値を使用）
   static const int cmdTripleTab = MediaControlButton.tripleTab;
 
   /// 長押し → エスケープタイマー起動
@@ -81,8 +81,8 @@ class StealthCommandHandler {
   /// [command] : BLEメディアコントロールボタンから受信したコマンド値
   ///
   /// コマンドと動作の対応:
-  /// - [cmdDoubleTab] (0x02) : フラッシュSOSパターン点滅
-  /// - [cmdTripleTab] (0x03) : 録音中なら停止・文字起こし、停止中なら録音開始
+  /// - [cmdDoubleTab] (0x01) : 録音中なら停止・文字起こし、停止中なら録音開始
+  /// - [cmdTripleTab] (0x02) : フラッシュSOSパターン点滅
   /// - 不明なコマンド : 無視する
   ///
   /// 注: [cmdLongPress] (0x04) はエスケープタイマーとして使用するが、
@@ -90,9 +90,9 @@ class StealthCommandHandler {
   Future<void> handleCommand(int command) async {
     switch (command) {
       case cmdDoubleTab:
-        await _handleFlash();
-      case cmdTripleTab:
         await _handleVoiceMemo();
+      case cmdTripleTab:
+        await _handleFlash();
       default:
         // 未知のコマンドは無視する（将来の拡張に備えてログのみ出力）
         // ignore: avoid_print

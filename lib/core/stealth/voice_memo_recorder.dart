@@ -379,13 +379,20 @@ class VoiceMemoRecorder {
 /// ```
 class VoiceRecorderNotifier extends StateNotifier<bool> {
   final VoiceMemoRecorder _recorder;
+  late final StreamSubscription<bool> _subscription;
 
   VoiceRecorderNotifier(this._recorder) : super(false) {
     // VoiceMemoRecorder の Stream を購読して state を同期させる
     // これにより自動分割（10分タイマー）による状態変化も Riverpod 側に伝播する
-    _recorder.isRecordingStream.listen((isRecording) {
+    _subscription = _recorder.isRecordingStream.listen((isRecording) {
       if (mounted) state = isRecording;
     });
+  }
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
   }
 
   /// 録音を開始する

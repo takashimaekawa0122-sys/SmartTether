@@ -255,7 +255,7 @@ class _TimelineList extends StatefulWidget {
 }
 
 class _TimelineListState extends State<_TimelineList> {
-  final _listKey = GlobalKey<AnimatedListState>();
+  GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
   late List<TimelineEntry> _currentEntries;
 
   @override
@@ -277,8 +277,9 @@ class _TimelineListState extends State<_TimelineList> {
             duration: const Duration(milliseconds: 300));
       }
     } else {
-      // エントリが減った場合（クリアなど）はリビルド
+      // エントリが減った場合（クリアなど）はキーを再生成してリビルド
       setState(() {
+        _listKey = GlobalKey<AnimatedListState>();
         _currentEntries = List.of(widget.entries);
       });
     }

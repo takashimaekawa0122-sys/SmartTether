@@ -97,6 +97,7 @@ class BleManager {
 
     _currentDeviceId = macAddress;
     _retryCount = 0;
+    _disposed = false; // disconnect()後の再接続を可能にする
     return _doConnect(macAddress, authKey);
   }
 

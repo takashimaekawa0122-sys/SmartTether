@@ -81,9 +81,10 @@ class BleManager {
   ///
   /// iOS では MACアドレスでは接続できないため、
   /// BLEスキャンで Band 9 を見つけてプラットフォーム固有のIDを取得する。
-  Stream<DiscoveredDevice> scanForBand9({Duration timeout = const Duration(seconds: 10)}) {
+  /// サービスUUIDフィルターなしでスキャンし、すべてのBLEデバイスを返す。
+  Stream<DiscoveredDevice> scanForBand9({Duration timeout = const Duration(seconds: 15)}) {
     return _ble.scanForDevices(
-      withServices: [Uuid.parse(BandServiceUUIDs.main)],
+      withServices: [],
       scanMode: ScanMode.lowLatency,
     ).timeout(timeout, onTimeout: (sink) => sink.close());
   }

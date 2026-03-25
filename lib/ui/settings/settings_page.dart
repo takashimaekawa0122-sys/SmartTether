@@ -162,10 +162,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             // ダイアログ表示時にスキャン開始
             subscription ??= bleManager.scanForBand9().listen(
               (device) {
-                // 重複を除外
-                if (!foundDevices.any((d) => d.id == device.id)) {
+                // 重複を除外（名前があるデバイスのみ表示）
+                if (device.name.isNotEmpty &&
+                    !foundDevices.any((d) => d.id == device.id)) {
                   setDialogState(() {
-                    foundDevices.add(device);
+                    // Band関連デバイスをリストの先頭に表示
+                    final isBand = _isBandDevice(device.name);
+                    if (isBand) {
+                      foundDevices.insert(0, device);
+                    } else {
+                      foundDevices.add(device);
+                    }
                   });
                 }
               },
@@ -176,7 +183,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             return AlertDialog(
               backgroundColor: const Color(0xFF1E1E2E),
               title: const Text(
-                'Band 9 をスキャン中...',
+                '周囲のBLEデバイス',
                 style: TextStyle(color: Colors.white, fontSize: 16),
               ),
               content: SizedBox(
@@ -192,7 +199,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             ),
                             SizedBox(height: 16),
                             Text(
-                              'Band 9 の Bluetooth が\nオンになっているか確認してください',
+                              'スキャン中...\nBand 9 が近くにあることを確認してください',
                               style: TextStyle(
                                 color: Color(0xFF8B8B9E),
                                 fontSize: 13,
@@ -206,23 +213,26 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         itemCount: foundDevices.length,
                         itemBuilder: (_, index) {
                           final device = foundDevices[index];
-                          final name = device.name.isNotEmpty
-                              ? device.name
-                              : '不明なデバイス';
+                          final isBand = _isBandDevice(device.name);
                           return ListTile(
-                            leading: const Icon(
-                              Icons.watch,
-                              color: Color(0xFF7C3AED),
+                            leading: Icon(
+                              isBand ? Icons.watch : Icons.bluetooth,
+                              color: isBand
+                                  ? const Color(0xFF7C3AED)
+                                  : const Color(0xFF8B8B9E),
                             ),
                             title: Text(
-                              name,
-                              style: const TextStyle(color: Colors.white),
+                              device.name,
+                              style: TextStyle(
+                                color: isBand ? Colors.white : const Color(0xFF8B8B9E),
+                                fontWeight: isBand ? FontWeight.bold : FontWeight.normal,
+                              ),
                             ),
                             subtitle: Text(
-                              'RSSI: ${device.rssi}dBm',
+                              'RSSI: ${device.rssi}dBm  ID: ${device.id.length > 20 ? '${device.id.substring(0, 20)}...' : device.id}',
                               style: const TextStyle(
-                                color: Color(0xFF8B8B9E),
-                                fontSize: 12,
+                                color: Color(0xFF4A4A5E),
+                                fontSize: 11,
                               ),
                             ),
                             onTap: () {
@@ -263,6 +273,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         ),
       );
     }
+  }
+
+  /// デバイス名がBand関連かどうかを判定する
+  bool _isBandDevice(String name) {
+    final lower = name.toLowerCase();
+    return lower.contains('band') ||
+        lower.contains('mi ') ||
+        lower.contains('xiaomi');
   }
 
   /// Band 9のMACアドレスとAuth Keyを保存する

@@ -57,6 +57,10 @@ class BleManager {
       StreamController<BleConnectionState>.broadcast();
   final _rssiController = StreamController<double>.broadcast();
 
+  /// 診断用: 発見したサービス一覧をUIに伝えるStream
+  final _diagnosticController = StreamController<String>.broadcast();
+  Stream<String> get diagnosticStream => _diagnosticController.stream;
+
   StreamSubscription<ConnectionStateUpdate>? _connectionSubscription;
   Timer? _rssiTimer;
   Timer? _retryTimer;
@@ -185,6 +189,7 @@ class BleManager {
     _connectionSubscription?.cancel();
     _connectionStateController.close();
     _rssiController.close();
+    _diagnosticController.close();
   }
 
   // ----------------------------------------------------------------
@@ -215,14 +220,16 @@ class BleManager {
                   try {
                     await _ble.discoverAllServices(deviceId);
                     final services = await _ble.getDiscoveredServices(deviceId);
-                    // ignore: avoid_print
-                    print('[BleManager] ===== Band 9 サービス一覧 =====');
+                    final buf = StringBuffer('=== Band 9 BLE Services ===\n');
                     for (final s in services) {
-                      // ignore: avoid_print
-                      print('[BleManager] $s');
+                      buf.writeln('$s');
                     }
+                    final log = buf.toString();
                     // ignore: avoid_print
-                    print('[BleManager] ================================');
+                    print('[BleManager] $log');
+                    if (!_diagnosticController.isClosed) {
+                      _diagnosticController.add(log);
+                    }
                   } catch (e) {
                     // ignore: avoid_print
                     print('[BleManager] サービス探索エラー: $e');

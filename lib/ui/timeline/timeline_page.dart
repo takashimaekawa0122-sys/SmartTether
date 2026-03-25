@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/ble/ble_manager.dart';
 import '../../core/security/app_secrets.dart';
@@ -98,6 +101,46 @@ class TimelinePage extends ConsumerStatefulWidget {
 
 class _TimelinePageState extends ConsumerState<TimelinePage> {
   bool _isStarting = false;
+  StreamSubscription<String>? _diagnosticSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // BLE接続後に発見したサービス一覧をダイアログで表示する（UUID確認用）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _diagnosticSub = ref.read(bleManagerProvider).diagnosticStream.listen((log) {
+        if (!mounted) return;
+        showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            backgroundColor: const Color(0xFF1E1E2E),
+            title: const Text('BLE サービス診断', style: TextStyle(color: Colors.white, fontSize: 15)),
+            content: SingleChildScrollView(
+              child: SelectableText(
+                log,
+                style: const TextStyle(color: Color(0xFF4ECDC4), fontSize: 11, fontFamily: 'monospace'),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: log));
+                  Navigator.pop(context);
+                },
+                child: const Text('コピーして閉じる', style: TextStyle(color: Color(0xFF7C3AED))),
+              ),
+            ],
+          ),
+        );
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _diagnosticSub?.cancel();
+    super.dispose();
+  }
 
   Future<void> _toggleMonitoring() async {
     final isRunning = ref.read(backgroundServiceProvider);

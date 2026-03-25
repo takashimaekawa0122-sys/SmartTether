@@ -54,9 +54,11 @@ class BandAuthenticator {
 
   Future<AuthResult> _doAuthenticate(
       String deviceId, String authKey) async {
+    // Band 9 は fe95/005e を使用する（旧: fee1/0009）
+    // TODO: Band 9 V2プロトコル（HMAC-SHA256 + AES-CCM）への移行が必要
     final authCharacteristic = QualifiedCharacteristic(
-      serviceId: Uuid.parse(BandServiceUUIDs.auth),
-      characteristicId: Uuid.parse(BandCharacteristicUUIDs.auth),
+      serviceId: Uuid.parse(BandServiceUUIDs.main),
+      characteristicId: Uuid.parse(BandCharacteristicUUIDs.mainChannel),
       deviceId: deviceId,
     );
 

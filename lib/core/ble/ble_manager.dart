@@ -138,7 +138,7 @@ class BleManager {
     try {
       final characteristic = QualifiedCharacteristic(
         serviceId: Uuid.parse(BandServiceUUIDs.main),
-        characteristicId: Uuid.parse(BandCharacteristicUUIDs.notification),
+        characteristicId: Uuid.parse(BandCharacteristicUUIDs.mainChannel),
         deviceId: _currentDeviceId!,
       );
 
@@ -262,18 +262,24 @@ class BleManager {
                   _isAuthenticating = false;
                   if (_disposed) return;
 
+                  // 認証成功・失敗いずれの場合も RSSI 監視は開始する。
+                  // Band 9 V2プロトコル（HMAC-SHA256）は未実装のため認証は
+                  // 現時点では必ず失敗するが、RSSI監視は認証不要で動作する。
+                  // 振動コマンド・ボタン検知は V2プロトコル実装後に有効になる。
+                  _retryCount = 0;
+                  _updateState(BleConnectionState.connected);
+                  _startRssiPolling(deviceId);
+
                   if (authResult is AuthSuccess) {
-                    _retryCount = 0;
-                    _updateState(BleConnectionState.connected);
-                    _startRssiPolling(deviceId);
-                    if (!completer.isCompleted) completer.complete(const BleSuccess(null));
+                    // ignore: avoid_print
+                    print('[BleManager] 認証成功（振動・ボタン検知が有効）');
                   } else {
                     final failure = authResult as AuthFailure;
-                    _updateState(BleConnectionState.error);
-                    if (!completer.isCompleted) {
-                      completer.complete(BleFailure(failure.error));
-                    }
+                    // ignore: avoid_print
+                    print('[BleManager] 認証スキップ（RSSI監視のみ動作）: ${failure.error}');
                   }
+
+                  if (!completer.isCompleted) completer.complete(const BleSuccess(null));
 
                 case DeviceConnectionState.disconnected:
                   // 認証中の切断イベントは認証完了後に処理されるため無視する

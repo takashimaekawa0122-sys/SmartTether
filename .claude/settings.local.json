@@ -73,7 +73,19 @@
       "Bash(xargs ls:*)",
       "Bash(grep -E \"\\\\.md$\")",
       "WebFetch(domain:api.github.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.codemagic.io)",
+      "Bash(powershell -Command \"Get-AppxPackage *iTunes* | Remove-AppxPackage\")",
+      "Bash(powershell -Command \"Get-AppxPackage *iCloud* | Remove-AppxPackage\")",
+      "Bash(lcov --list coverage/lcov.info)",
+      "Read(//^  record:/{found=1} found && /version:/**)",
+      "Read(//^  record_linux:/{found=1} found && /version:/**)",
+      "Bash(ls -la C:/claude/SmartTether/ios/Podfile*)",
+      "Bash(find C:claudeSmartTether.claudeworktreessad-lewin -path */flutter_reactive_ble/lib/*.dart -name *.dart)",
+      "WebFetch(domain:codeberg.org)",
+      "WebFetch(domain:grep.app)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:gadgetbridge.org)"
     ]
   }
 }

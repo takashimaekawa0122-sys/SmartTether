@@ -36,9 +36,14 @@ class TimelineLogger {
 
     await _persist();
 
-    // リスナーに通知
-    for (final listener in _listeners) {
-      listener(entry);
+    // リスナーに通知（1つが例外をスローしても後続リスナーは呼び続ける）
+    for (final listener in List.of(_listeners)) {
+      try {
+        listener(entry);
+      } catch (e) {
+        // ignore: avoid_print
+        print('[TimelineLogger] リスナー例外: $e');
+      }
     }
   }
 

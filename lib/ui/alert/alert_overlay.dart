@@ -97,6 +97,7 @@ class _AlertOverlayControllerState
 
   /// ユーザーが「解除する」を押したときの処理
   void _handleDismiss() {
+    if (!mounted) return;
     _stopAlert();
     setState(() {
       _dismissedByUser = true;
@@ -122,8 +123,10 @@ class _AlertOverlayControllerState
             }
           });
         }
-        // アラート音も確実に停止
-        _stopAlert();
+        // アラート音も確実に停止（build()内での副作用を避けるためpostFrameCallbackで呼ぶ）
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _stopAlert();
+        });
       }
     }
 

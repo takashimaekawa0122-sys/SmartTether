@@ -95,7 +95,11 @@ void onStart(ServiceInstance service) async {
   // メインIsolateの BleManager が invoke('rssiUpdate') した値をここで受け取る
   // 注意: メインIsolate側で既にスムージング済みの値が送られてくるため、
   //       ここでは二重スムージングせず smoothedValue のみ更新する
-  service.on('rssiUpdate').listen((data) {
+  StreamSubscription? rssiSub;
+  StreamSubscription? stopSub;
+  Timer? monitorTimer;
+
+  rssiSub = service.on('rssiUpdate').listen((data) {
     // IPC経由のJSONでは int が来る可能性があるため num 経由で変換する
     final rssi = (data?['rssi'] as num?)?.toDouble();
     if (rssi != null) {
@@ -106,10 +110,11 @@ void onStart(ServiceInstance service) async {
   // ---- 停止コマンドのリスナー ----
   // UIから 'stopService' イベントを受け取ったらサービスを停止する
   // monitorTimer は監視ループの参照（停止時にキャンセルするため）
-  Timer? monitorTimer;
 
-  service.on('stopService').listen((_) async {
+  stopSub = service.on('stopService').listen((_) async {
     monitorTimer?.cancel();
+    rssiSub?.cancel();
+    stopSub?.cancel();
     try {
       await timelineLogger.log(
         TimelineEventType.monitoringStopped,

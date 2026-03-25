@@ -122,6 +122,10 @@ class SafeZoneDetector {
 /// Riverpodプロバイダー
 ///
 /// アプリ全体で単一インスタンスを共有する。
-/// initialize()の呼び出しはアプリ起動シーケンスで行うこと。
-final safeZoneDetectorProvider =
-    Provider<SafeZoneDetector>((ref) => SafeZoneDetector());
+/// プロバイダー生成時に initialize() を非同期で開始する。
+final safeZoneDetectorProvider = Provider<SafeZoneDetector>((ref) {
+  final detector = SafeZoneDetector();
+  // SharedPreferences から保存済みSSIDをバックグラウンドで読み込む
+  detector.initialize();
+  return detector;
+});

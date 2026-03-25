@@ -63,6 +63,7 @@ class BleManager {
 
   int _retryCount = 0;
   bool _disposed = false;
+  bool _isAuthenticating = false;
   String? _currentDeviceId;
 
 
@@ -212,9 +213,13 @@ class BleManager {
                 case DeviceConnectionState.connected:
                   // 接続成功 → 認証フェーズへ
                   _updateState(BleConnectionState.authenticating);
+                  _isAuthenticating = true;
 
                   final authResult =
                       await _authenticator.authenticate(deviceId, authKey);
+
+                  _isAuthenticating = false;
+                  if (_disposed) return;
 
                   if (authResult is AuthSuccess) {
                     _retryCount = 0;
@@ -230,6 +235,8 @@ class BleManager {
                   }
 
                 case DeviceConnectionState.disconnected:
+                  // 認証中の切断イベントは認証完了後に処理されるため無視する
+                  if (_isAuthenticating) break;
                   _rssiTimer?.cancel();
                   _rssiSmoother.reset();
                   if (!completer.isCompleted) {
@@ -289,11 +296,13 @@ class BleManager {
       if (_disposed) return;
       try {
         final rssi = await _ble.readRssi(deviceId);
+        // awaitの間にdisposeが走った場合を防ぐ
+        if (_disposed) return;
         _rssiSmoother.addValue(rssi);
         final smoothed = _rssiSmoother.smoothedValue;
 
         // UI側へ通知
-        _rssiController.add(smoothed);
+        if (!_rssiController.isClosed) _rssiController.add(smoothed);
 
         // バックグラウンドIsolateへ IPC 送信
         FlutterBackgroundService().invoke('rssiUpdate', {'rssi': smoothed});

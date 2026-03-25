@@ -200,16 +200,16 @@ void main() {
   });
 
   group('MediaControlButton', () {
-    test('doubleTab は 0x01', () {
-      expect(MediaControlButton.doubleTab, equals(0x01));
+    test('doubleTab は 0x04（Band 9: 次の曲）', () {
+      expect(MediaControlButton.doubleTab, equals(0x04));
     });
 
-    test('tripleTab は 0x02', () {
-      expect(MediaControlButton.tripleTab, equals(0x02));
+    test('tripleTab は 0x03（Band 9: 前の曲）', () {
+      expect(MediaControlButton.tripleTab, equals(0x03));
     });
 
-    test('longPress は 0x03', () {
-      expect(MediaControlButton.longPress, equals(0x03));
+    test('longPress は 0x01（Band 9: 再生/停止）', () {
+      expect(MediaControlButton.longPress, equals(0x01));
     });
   });
 }

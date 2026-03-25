@@ -48,7 +48,7 @@ void main() async {
   var showOnboarding = true;
   try {
     final prefs = await SharedPreferences.getInstance();
-    final onboardingDone = prefs.getBool('onboarding_done') ?? false;
+    final onboardingDone = prefs.getBool(kOnboardingDoneKey) ?? false;
     showOnboarding = !onboardingDone;
   } catch (e) {
     // ignore: avoid_print

@@ -266,6 +266,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       // デバイスIDを保存（iOSではUUID、AndroidではMAC）
       await AppSecrets.saveBandMacAddress(result.id);
       _macController.text = result.id;
+      // await後もmountedを確認してからcontextを使う
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${result.name.isNotEmpty ? result.name : "Band 9"} を検出しました'),
@@ -343,14 +345,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
           // ---- Avalon API設定 ----
-          _SectionHeader(title: 'Avalon API設定'),
+          const _SectionHeader(title: 'Avalon API設定'),
           const SizedBox(height: 8),
           _SettingsCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (isApiKeySet)
-                  _StatusBadge(label: '設定済み')
+                  const _StatusBadge(label: '設定済み')
                 else
                   const Text(
                     'APIキーが未設定です',
@@ -405,7 +407,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           const SizedBox(height: 24),
 
           // ---- セーフゾーン設定 ----
-          _SectionHeader(title: 'セーフゾーン設定'),
+          const _SectionHeader(title: 'セーフゾーン設定'),
           const SizedBox(height: 4),
           const Padding(
             padding: EdgeInsets.only(bottom: 8),
@@ -460,7 +462,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           const SizedBox(height: 24),
 
           // ---- Band 9設定 ----
-          _SectionHeader(title: 'Band 9設定'),
+          const _SectionHeader(title: 'Band 9設定'),
           const SizedBox(height: 4),
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
@@ -478,7 +480,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_isBand9Set) _StatusBadge(label: '設定済み'),
+                if (_isBand9Set) const _StatusBadge(label: '設定済み'),
                 if (_isBand9Set) const SizedBox(height: 12),
 
                 // Band 9 スキャンボタン

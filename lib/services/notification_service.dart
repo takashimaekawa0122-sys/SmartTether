@@ -155,7 +155,7 @@ class NotificationService {
     required String body,
   }) async {
     try {
-      final androidDetails = AndroidNotificationDetails(
+      const androidDetails = AndroidNotificationDetails(
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
@@ -166,7 +166,7 @@ class NotificationService {
         showWhen: false,
       );
 
-      final details = NotificationDetails(android: androidDetails);
+      const details = NotificationDetails(android: androidDetails);
 
       await _plugin.show(_idPersistent, title, body, details);
     } catch (e) {
@@ -185,7 +185,7 @@ class NotificationService {
     required String body,
   }) async {
     try {
-      final androidDetails = AndroidNotificationDetails(
+      const androidDetails = AndroidNotificationDetails(
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
@@ -203,7 +203,7 @@ class NotificationService {
         presentSound: true,
       );
 
-      final details = NotificationDetails(
+      const details = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       );
@@ -237,7 +237,7 @@ class NotificationService {
               ? '録音時間: $durationText\n「${transcription.length > 50 ? '${transcription.substring(0, 50)}…' : transcription}」'
               : '録音時間: $durationText';
 
-      final androidDetails = AndroidNotificationDetails(
+      const androidDetails = AndroidNotificationDetails(
         _channelId,
         _channelName,
         channelDescription: _channelDescription,
@@ -245,7 +245,7 @@ class NotificationService {
         priority: Priority.defaultPriority,
         autoCancel: true,
         // 長い文字起こしを折りたたんで表示するスタイル
-        styleInformation: const BigTextStyleInformation(''),
+        styleInformation: BigTextStyleInformation(''),
       );
 
       const iosDetails = DarwinNotificationDetails(
@@ -254,7 +254,7 @@ class NotificationService {
         presentSound: false, // ボイスメモ完了は無音で通知する
       );
 
-      final details = NotificationDetails(
+      const details = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       );

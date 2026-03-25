@@ -65,7 +65,6 @@ class BleManager {
   bool _disposed = false;
   String? _currentDeviceId;
 
-
   /// 接続状態のストリーム
   Stream<BleConnectionState> get connectionStateStream =>
       _connectionStateController.stream;

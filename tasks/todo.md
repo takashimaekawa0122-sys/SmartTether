@@ -54,6 +54,15 @@
 ### テスト
 - [x] flutter test カバレッジ 90% 以上（92.5% 達成・全144テストパス）
 
+### リファクタリング（2026-03-25）
+- [x] flutter analyze: 0 issues（修正前 13 issues）
+- [x] use_build_context_synchronously 修正（settings_page.dart）
+- [x] prefer_const_constructors 修正（notification_service.dart × 6、onboarding_page.dart × 3、settings_page.dart × 5）
+- [x] 重複文字列リテラル 'onboarding_done' を kOnboardingDoneKey 定数に共通化
+- [x] _EmptyState に const コンストラクタを追加
+- [x] ble_manager.dart の余分な空行を除去
+- [x] 全163テストパス確認
+
 ### インフラ
 - [x] codemagic.yaml（iOS Ad-hocビルド設定）
 - [x] GitHubリポジトリ作成・プッシュ（takashimaekawa0122-sys/SmartTether）

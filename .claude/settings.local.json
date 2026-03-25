@@ -85,7 +85,11 @@
       "WebFetch(domain:codeberg.org)",
       "WebFetch(domain:grep.app)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:gadgetbridge.org)"
+      "WebFetch(domain:gadgetbridge.org)",
+      "Bash(xargs wc:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }

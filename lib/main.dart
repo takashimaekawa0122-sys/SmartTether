@@ -11,7 +11,13 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // バックグラウンドサービスを設定する（起動はユーザー操作まで行わない）
-  await initializeBackgroundService();
+  // 失敗してもアプリ自体は起動できるようにエラーを握りつぶす
+  try {
+    await initializeBackgroundService();
+  } catch (e) {
+    // ignore: avoid_print
+    print('[main] バックグラウンドサービス初期化エラー（続行）: $e');
+  }
 
   // 開発用プレースホルダーを設定（Band 9到着後に削除）
   await AppSecrets.setDevelopmentPlaceholders();

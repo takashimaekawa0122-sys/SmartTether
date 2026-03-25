@@ -200,20 +200,9 @@ class BleManager {
 
       final completer = Completer<BleResult<void>>();
 
-      // servicesWithCharacteristicsToDiscover を明示することで
-      // iOSがサービス探索を完了してから connected を発火するようにする
       _connectionSubscription = _ble
           .connectToDevice(
             id: deviceId,
-            servicesWithCharacteristicsToDiscover: {
-              Uuid.parse(BandServiceUUIDs.auth): [
-                Uuid.parse(BandCharacteristicUUIDs.auth),
-              ],
-              Uuid.parse(BandServiceUUIDs.main): [
-                Uuid.parse(BandCharacteristicUUIDs.notification),
-                Uuid.parse(BandCharacteristicUUIDs.deviceInfo),
-              ],
-            },
             connectionTimeout: const Duration(seconds: 15),
           )
           .listen(
@@ -222,7 +211,24 @@ class BleManager {
 
               switch (update.connectionState) {
                 case DeviceConnectionState.connected:
-                  // 接続成功 → 認証フェーズへ
+                  // 接続成功 → 全サービスを探索してログ出力（UUID確認用）
+                  try {
+                    await _ble.discoverAllServices(deviceId);
+                    final services = await _ble.getDiscoveredServices(deviceId);
+                    // ignore: avoid_print
+                    print('[BleManager] ===== Band 9 サービス一覧 =====');
+                    for (final s in services) {
+                      // ignore: avoid_print
+                      print('[BleManager] $s');
+                    }
+                    // ignore: avoid_print
+                    print('[BleManager] ================================');
+                  } catch (e) {
+                    // ignore: avoid_print
+                    print('[BleManager] サービス探索エラー: $e');
+                  }
+
+                  // 認証フェーズへ
                   _updateState(BleConnectionState.authenticating);
                   _isAuthenticating = true;
 

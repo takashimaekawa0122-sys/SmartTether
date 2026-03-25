@@ -12,7 +12,7 @@ workflows:
     instance_type: mac_mini_m2
 
     environment:
-      flutter: latest
+      flutter: 3.29.2
       xcode: latest
       cocoapods: default
       vars:

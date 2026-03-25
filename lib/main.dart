@@ -4,6 +4,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'core/security/app_secrets.dart';
 import 'services/background_service.dart';
+import 'services/notification_service.dart';
 import 'ui/alert/alert_overlay.dart';
 import 'ui/onboarding/onboarding_page.dart';
 import 'ui/timeline/timeline_page.dart';
@@ -26,6 +27,14 @@ void main() async {
   } catch (e) {
     // ignore: avoid_print
     print('[main] バックグラウンドサービス初期化エラー（続行）: $e');
+  }
+
+  // 通知サービスを初期化する（通知チャンネル作成・権限申請）
+  try {
+    await NotificationService.instance.initialize();
+  } catch (e) {
+    // ignore: avoid_print
+    print('[main] NotificationService初期化エラー（続行）: $e');
   }
 
   // 開発用プレースホルダーを設定（Band 9到着後に削除）

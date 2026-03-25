@@ -5,7 +5,8 @@ import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../security/app_secrets.dart';
-import 'band_authenticator.dart';
+// TODO: V2プロトコル実装後に認証を有効化
+// import 'band_authenticator.dart';
 import 'band_protocol.dart';
 import 'rssi_smoother.dart';
 
@@ -45,12 +46,11 @@ class BleFailure<T> extends BleResult<T> {
 class BleManager {
   /// テスト用: [FlutterReactiveBle] を外部から注入できる。
   /// 省略時は実機向けインスタンスを生成する。
-  BleManager({FlutterReactiveBle? ble}) : _ble = ble ?? FlutterReactiveBle() {
-    _authenticator = BandAuthenticator(_ble);
-  }
+  BleManager({FlutterReactiveBle? ble}) : _ble = ble ?? FlutterReactiveBle();
 
   final FlutterReactiveBle _ble;
-  late final BandAuthenticator _authenticator;
+  // TODO: V2プロトコル実装後に認証を有効化
+  // late final BandAuthenticator _authenticator = BandAuthenticator(_ble);
   final _rssiSmoother = RSSISmoother();
 
   final _connectionStateController =
@@ -63,7 +63,8 @@ class BleManager {
 
   int _retryCount = 0;
   bool _disposed = false;
-  bool _isAuthenticating = false;
+  // TODO: V2プロトコル実装後に認証を有効化
+  final bool _isAuthenticating = false;
   String? _currentDeviceId;
 
 
@@ -145,7 +146,7 @@ class BleManager {
         payload.add((pattern.pattern[i] / 100).round().clamp(1, 255));
       }
 
-      await _ble.writeCharacteristicWithResponse(
+      await _ble.writeCharacteristicWithoutResponse(
         characteristic,
         value: payload,
       );
@@ -211,32 +212,18 @@ class BleManager {
 
               switch (update.connectionState) {
                 case DeviceConnectionState.connected:
-                  // 認証フェーズへ
-                  _updateState(BleConnectionState.authenticating);
-                  _isAuthenticating = true;
-
-                  final authResult =
-                      await _authenticator.authenticate(deviceId, authKey);
-
-                  _isAuthenticating = false;
-                  if (_disposed) return;
-
-                  // 認証成功・失敗いずれの場合も RSSI 監視は開始する。
-                  // Band 9 V2プロトコル（HMAC-SHA256）は未実装のため認証は
-                  // 現時点では必ず失敗するが、RSSI監視は認証不要で動作する。
+                  // TODO: V2プロトコル実装後に認証を有効化
+                  // Band 9 V2プロトコル（HMAC-SHA256 + AES-CCM）は未実装のため
+                  // 認証フェーズをスキップし、接続直後にRSSI監視を開始する。
+                  // 認証なしでもRSSI監視は動作する。
                   // 振動コマンド・ボタン検知は V2プロトコル実装後に有効になる。
+
                   _retryCount = 0;
                   _updateState(BleConnectionState.connected);
                   _startRssiPolling(deviceId);
 
-                  if (authResult is AuthSuccess) {
-                    // ignore: avoid_print
-                    print('[BleManager] 認証成功（振動・ボタン検知が有効）');
-                  } else {
-                    final failure = authResult as AuthFailure;
-                    // ignore: avoid_print
-                    print('[BleManager] 認証スキップ（RSSI監視のみ動作）: ${failure.error}');
-                  }
+                  // ignore: avoid_print
+                  print('[BleManager] 接続完了（認証スキップ・RSSI監視のみ動作）');
 
                   if (!completer.isCompleted) completer.complete(const BleSuccess(null));
 

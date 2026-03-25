@@ -93,7 +93,7 @@ class BandAuthenticator {
 
           // Step 5: 0x04 + 暗号文を Write
           final payload = [AuthCommands.sendEncryptedNumber, ...encrypted];
-          await _ble.writeCharacteristicWithResponse(
+          await _ble.writeCharacteristicWithoutResponse(
             authCharacteristic,
             value: payload,
           );
@@ -121,7 +121,7 @@ class BandAuthenticator {
 
     try {
       // Step 2: 0x02（認証番号要求）を Write
-      await _ble.writeCharacteristicWithResponse(
+      await _ble.writeCharacteristicWithoutResponse(
         authCharacteristic,
         value: [AuthCommands.requestAuthNumber],
       );

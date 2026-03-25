@@ -26,27 +26,6 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>UIApplicationSceneManifest</key>
-	<dict>
-		<key>UIApplicationSupportsMultipleScenes</key>
-		<false/>
-		<key>UISceneConfigurations</key>
-		<dict>
-			<key>UIWindowSceneSessionRoleApplication</key>
-			<array>
-				<dict>
-					<key>UISceneClassName</key>
-					<string>UIWindowScene</string>
-					<key>UISceneConfigurationName</key>
-					<string>flutter</string>
-					<key>UISceneDelegateClassName</key>
-					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
-					<key>UISceneStoryboardFile</key>
-					<string>Main</string>
-				</dict>
-			</array>
-		</dict>
-	</dict>
 	<!-- バックグラウンドモード（ADR-005） -->
 	<key>UIBackgroundModes</key>
 	<array>
@@ -54,6 +33,7 @@
 		<string>audio</string>
 		<string>location</string>
 		<string>fetch</string>
+		<string>processing</string>
 	</array>
 	<!-- パーミッション説明文 -->
 	<key>NSMicrophoneUsageDescription</key>
@@ -63,6 +43,8 @@
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>バックグラウンドでのセーフゾーン検出に使用します</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Smart Band 9との接続に使用します</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Smart Band 9との接続に使用します</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>

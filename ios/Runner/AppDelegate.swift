@@ -1,6 +1,5 @@
 import Flutter
 import UIKit
-import CoreBluetooth
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {

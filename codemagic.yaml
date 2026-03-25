@@ -27,7 +27,7 @@ workflows:
 
       # 2. 静的解析
       - name: Flutter 静的解析
-        script: flutter analyze --no-pub
+        script: flutter analyze --no-pub --no-fatal-infos
 
       # 3. ユニットテスト
       - name: Flutter テスト

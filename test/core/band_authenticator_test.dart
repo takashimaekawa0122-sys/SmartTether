@@ -139,7 +139,7 @@ void main() {
     test('スペースを含む Auth Key は正規化してから使用する', () {
       final challenge = List<int>.generate(16, (i) => i);
       // スペースを挟んだ同じキー
-      final keyWithSpaces = '872a5ccb 7c1f7ec0 310ee04b 091135c6';
+      const keyWithSpaces = '872a5ccb 7c1f7ec0 310ee04b 091135c6';
 
       final result = encryptChallenge(keyWithSpaces, challenge);
       final resultNoSpaces = encryptChallenge(testAuthKey, challenge);

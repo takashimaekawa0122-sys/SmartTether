@@ -200,10 +200,21 @@ class BleManager {
 
       final completer = Completer<BleResult<void>>();
 
+      // servicesWithCharacteristicsToDiscover を明示することで
+      // iOSがサービス探索を完了してから connected を発火するようにする
       _connectionSubscription = _ble
           .connectToDevice(
             id: deviceId,
-            connectionTimeout: const Duration(seconds: 10),
+            servicesWithCharacteristicsToDiscover: {
+              Uuid.parse(BandServiceUUIDs.auth): [
+                Uuid.parse(BandCharacteristicUUIDs.auth),
+              ],
+              Uuid.parse(BandServiceUUIDs.main): [
+                Uuid.parse(BandCharacteristicUUIDs.notification),
+                Uuid.parse(BandCharacteristicUUIDs.deviceInfo),
+              ],
+            },
+            connectionTimeout: const Duration(seconds: 15),
           )
           .listen(
             (update) async {

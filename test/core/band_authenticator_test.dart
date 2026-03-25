@@ -168,16 +168,16 @@ void main() {
     // BandServiceUUIDs の確認
     // -------------------------------------------------------------------------
 
-    test('認証サービス UUID が正しい形式', () {
+    test('メインサービス UUID が正しい形式', () {
       const uuidPattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
       final regex = RegExp(uuidPattern, caseSensitive: false);
-      expect(regex.hasMatch(BandServiceUUIDs.auth), isTrue);
+      expect(regex.hasMatch(BandServiceUUIDs.main), isTrue);
     });
 
-    test('認証キャラクタリスティック UUID が正しい形式', () {
+    test('メインチャンネル UUID が正しい形式', () {
       const uuidPattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
       final regex = RegExp(uuidPattern, caseSensitive: false);
-      expect(regex.hasMatch(BandCharacteristicUUIDs.auth), isTrue);
+      expect(regex.hasMatch(BandCharacteristicUUIDs.mainChannel), isTrue);
     });
   });
 

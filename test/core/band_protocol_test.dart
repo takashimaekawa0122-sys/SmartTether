@@ -7,17 +7,24 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('BandServiceUUIDs', () {
-    test('main UUID が正しい値を持つ', () {
+    test('main UUID が Band 9 の正しい値を持つ', () {
       expect(
         BandServiceUUIDs.main,
-        equals('0000fee0-0000-1000-8000-00805f9b34fb'),
+        equals('0000fe95-0000-1000-8000-00805f9b34fb'),
       );
     });
 
-    test('auth UUID が正しい値を持つ', () {
+    test('pairing UUID が正しい値を持つ', () {
       expect(
-        BandServiceUUIDs.auth,
-        equals('0000fee1-0000-1000-8000-00805f9b34fb'),
+        BandServiceUUIDs.pairing,
+        equals('0000fdab-0000-1000-8000-00805f9b34fb'),
+      );
+    });
+
+    test('battery UUID が標準BLE値を持つ', () {
+      expect(
+        BandServiceUUIDs.battery,
+        equals('0000180f-0000-1000-8000-00805f9b34fb'),
       );
     });
   });
@@ -27,45 +34,24 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('BandCharacteristicUUIDs', () {
-    test('auth UUID が正しい値を持つ', () {
+    test('mainChannel UUID が正しい値を持つ', () {
       expect(
-        BandCharacteristicUUIDs.auth,
-        equals('00000009-0000-3512-2118-0009af100700'),
+        BandCharacteristicUUIDs.mainChannel,
+        equals('0000005e-0000-1000-8000-00805f9b34fb'),
       );
     });
 
-    test('notification UUID が正しい値を持つ', () {
+    test('subChannel UUID が正しい値を持つ', () {
       expect(
-        BandCharacteristicUUIDs.notification,
-        equals('00000010-0000-3512-2118-0009af100700'),
+        BandCharacteristicUUIDs.subChannel,
+        equals('0000005f-0000-1000-8000-00805f9b34fb'),
       );
     });
 
-    test('deviceInfo UUID が正しい値を持つ', () {
+    test('batteryLevel UUID が標準BLE値を持つ', () {
       expect(
-        BandCharacteristicUUIDs.deviceInfo,
-        equals('00000004-0000-3512-2118-0009af100700'),
-      );
-    });
-
-    test('battery UUID が正しい値を持つ', () {
-      expect(
-        BandCharacteristicUUIDs.battery,
-        equals('00000006-0000-3512-2118-0009af100700'),
-      );
-    });
-
-    test('sensor UUID が正しい値を持つ', () {
-      expect(
-        BandCharacteristicUUIDs.sensor,
-        equals('00000007-0000-3512-2118-0009af100700'),
-      );
-    });
-
-    test('mediaControl UUID が正しい値を持つ', () {
-      expect(
-        BandCharacteristicUUIDs.mediaControl,
-        equals('00000011-0000-3512-2118-0009af100700'),
+        BandCharacteristicUUIDs.batteryLevel,
+        equals('00002a19-0000-1000-8000-00805f9b34fb'),
       );
     });
   });
@@ -138,16 +124,16 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('MediaControlButton', () {
-    test('doubleTab が 0x01', () {
-      expect(MediaControlButton.doubleTab, equals(0x01));
+    test('doubleTab が 0x04（Band 9: 次の曲）', () {
+      expect(MediaControlButton.doubleTab, equals(0x04));
     });
 
-    test('tripleTab が 0x02', () {
-      expect(MediaControlButton.tripleTab, equals(0x02));
+    test('tripleTab が 0x03（Band 9: 前の曲）', () {
+      expect(MediaControlButton.tripleTab, equals(0x03));
     });
 
-    test('longPress が 0x03', () {
-      expect(MediaControlButton.longPress, equals(0x03));
+    test('longPress が 0x01（Band 9: 再生/停止）', () {
+      expect(MediaControlButton.longPress, equals(0x01));
     });
   });
 }

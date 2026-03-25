@@ -58,6 +58,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Future<void> _loadCurrentSettings() async {
     try {
       final apiKey = await AppSecrets.getAvalonApiKey();
+      final mac = await AppSecrets.getBandMacAddress();
       if (mounted) {
         ref.read(_avalonApiKeySetProvider.notifier).state =
             apiKey != null && apiKey.isNotEmpty;
@@ -73,6 +74,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       if (mounted) {
         setState(() {
           _isBand9Set = isBandConfigured;
+          // 既存のMACアドレスをコントローラーに反映（保存時の空チェックを通過させるため）
+          if (mac != null && mac != 'XX:XX:XX:XX:XX:XX') {
+            _macController.text = mac;
+          }
         });
       }
     } catch (e) {

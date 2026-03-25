@@ -69,6 +69,10 @@ void onStart(ServiceInstance service) async {
   final rssiSmoother = RSSISmoother();
   final timelineLogger = TimelineLogger();
 
+  // ---- 段階遷移のための状態変数 ----
+  TetherState previousState = TetherState.monitoring;
+  DateTime? warningStartTime;
+
   try {
     // SharedPreferences から保存済みの設定を読み込む
     await safeZoneDetector.initialize();
@@ -132,13 +136,17 @@ void onStart(ServiceInstance service) async {
   //   - Band9到着後、BLE RSSI取得に切り替えても同じ間隔を維持できる
   monitorTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
     try {
-      await _performMonitoringCycle(
+      final result = await _performMonitoringCycle(
         service: service,
         safeZoneDetector: safeZoneDetector,
         thresholdLearner: thresholdLearner,
         rssiSmoother: rssiSmoother,
         timelineLogger: timelineLogger,
+        previousState: previousState,
+        warningStartTime: warningStartTime,
       );
+      previousState = result.state;
+      warningStartTime = result.warningStartTime;
     } catch (e) {
       // 監視サイクルの例外はログに記録して次のサイクルへ続行する
       // バックグラウンドサービスのクラッシュは致命的なため、例外を外へ出さない
@@ -148,16 +156,29 @@ void onStart(ServiceInstance service) async {
   });
 }
 
+/// 監視サイクルの結果（段階遷移の状態を返すため）
+class _MonitoringCycleResult {
+  final TetherState state;
+  final DateTime? warningStartTime;
+
+  const _MonitoringCycleResult({
+    required this.state,
+    this.warningStartTime,
+  });
+}
+
 /// 1回分の監視サイクルを実行する
 ///
-/// セーフゾーン判定 → 状態決定 → UI通知の順で処理する。
+/// セーフゾーン判定 → 状態決定（grace→warning→confirmed段階遷移）→ UI通知の順で処理する。
 /// 例外はすべて呼び出し元でキャッチすること。
-Future<void> _performMonitoringCycle({
+Future<_MonitoringCycleResult> _performMonitoringCycle({
   required ServiceInstance service,
   required SafeZoneDetector safeZoneDetector,
   required AdaptiveThresholdLearner thresholdLearner,
   required RSSISmoother rssiSmoother,
   required TimelineLogger timelineLogger,
+  required TetherState previousState,
+  required DateTime? warningStartTime,
 }) async {
   // ---- セーフゾーン判定 ----
   final inSafeZone = await safeZoneDetector.isInSafeZone();
@@ -166,15 +187,18 @@ Future<void> _performMonitoringCycle({
   // rssiSmoother には onStart() の rssiUpdate リスナーが値を投入している
   final smoothedRssi = rssiSmoother.smoothedValue;
 
-  // ---- 状態を決定する ----
-  final TetherState newState;
+  // ---- 状態を決定する（grace → warning → confirmed 段階遷移） ----
+  TetherState newState;
+  DateTime? newWarningStartTime = warningStartTime;
 
   if (inSafeZone) {
     // セーフゾーン（自宅Wi-Fiなど）にいる場合はスリープ状態
     newState = TetherState.sleeping;
+    newWarningStartTime = null;
   } else if (smoothedRssi <= -999) {
     // RSSI未取得（BLE未接続）→ 監視中として扱う
     newState = TetherState.monitoring;
+    newWarningStartTime = null;
   } else {
     // RSSI と閾値を比較して状態を判定する
     if (rssiSmoother.isReady) {
@@ -182,9 +206,26 @@ Future<void> _performMonitoringCycle({
     }
 
     if (smoothedRssi <= thresholdLearner.threshold) {
-      newState = TetherState.warning;
+      // RSSI が閾値以下 → 段階遷移で状態を決定する
+      final now = DateTime.now();
+      newWarningStartTime ??= now;
+
+      final elapsed = now.difference(newWarningStartTime).inSeconds;
+
+      if (elapsed < 4) {
+        // 0〜3秒: grace（猶予フェーズ）— バックグラウンド再接続中
+        newState = TetherState.grace;
+      } else if (elapsed < 10) {
+        // 4〜9秒: warning（警告フェーズ）— バンドを振動させる
+        newState = TetherState.warning;
+      } else {
+        // 10秒以上: confirmed（確定フェーズ）— 全力アラート
+        newState = TetherState.confirmed;
+      }
     } else {
+      // RSSI が閾値以上に回復 → 監視状態に戻し、タイマーをリセットする
       newState = TetherState.monitoring;
+      newWarningStartTime = null;
     }
   }
 
@@ -195,6 +236,11 @@ Future<void> _performMonitoringCycle({
     'rssi': smoothedRssi,
     'inSafeZone': inSafeZone,
   });
+
+  return _MonitoringCycleResult(
+    state: newState,
+    warningStartTime: newWarningStartTime,
+  );
 }
 
 /// iOS バックグラウンドエントリポイント

@@ -1,13 +1,13 @@
 /// ステルストリガー — Band 9 ボタン入力をアクションに変換する
 ///
 /// Xiaomi Smart Band 9 のメディアコントロールキャラクタリスティック
-/// （0x11）を購読し、受信したボタン値を [StealthAction] に変換して
+/// （fe95/005e）を購読し、受信したボタン値を [StealthAction] に変換して
 /// Riverpod の StateNotifier 経由でUIへ通知する。
 ///
 /// ボタン値と動作の対応（band_protocol.dart の MediaControlButton と一致）:
-/// - 0x01 (doubleTab)  → [StealthAction.voiceMemo]  ボイスメモ開始/停止
-/// - 0x02 (tripleTab)  → [StealthAction.emergency]  緊急アラート
-/// - 0x03 (longPress)  → [StealthAction.safeSignal] 「今は安全」手動通知
+/// - 0x04 (doubleTab)  → [StealthAction.voiceMemo]  ボイスメモ開始/停止
+/// - 0x03 (tripleTab)  → [StealthAction.emergency]  緊急アラート
+/// - 0x01 (longPress)  → [StealthAction.safeSignal] 「今は安全」手動通知
 library;
 
 import 'dart:async';
@@ -249,22 +249,26 @@ final stealthTriggerProvider =
     commandHandler: ref.read(stealthCommandHandlerProvider),
   );
 
-  // BLE接続状態を監視して、接続完了時に自動で監視を開始する
-  ref.listen<AsyncValue<BleConnectionState>>(
-    bleConnectionStateProvider,
-    (_, next) {
-      // dispose後にコールバックが来た場合は無視する
-      if (!notifier.mounted) return;
-      next.whenData((connectionState) {
-        if (connectionState == BleConnectionState.connected) {
-          notifier.startListening();
-        } else if (connectionState == BleConnectionState.disconnected ||
-            connectionState == BleConnectionState.error) {
-          notifier.stopListening();
-        }
-      });
-    },
-  );
+  // TODO: V2プロトコル認証成功後に有効化
+  // BLE接続状態を監視して、接続完了時に自動で監視を開始する。
+  // V2プロトコル未実装のため、subscribeすると認証なしでエラーになる。
+  // 認証実装後に以下のコメントを解除すること。
+  //
+  // ref.listen<AsyncValue<BleConnectionState>>(
+  //   bleConnectionStateProvider,
+  //   (_, next) {
+  //     // dispose後にコールバックが来た場合は無視する
+  //     if (!notifier.mounted) return;
+  //     next.whenData((connectionState) {
+  //       if (connectionState == BleConnectionState.connected) {
+  //         notifier.startListening();
+  //       } else if (connectionState == BleConnectionState.disconnected ||
+  //           connectionState == BleConnectionState.error) {
+  //         notifier.stopListening();
+  //       }
+  //     });
+  //   },
+  // );
 
   ref.onDispose(notifier.dispose);
   return notifier;

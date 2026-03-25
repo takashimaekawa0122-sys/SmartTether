@@ -1,6 +1,11 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
+import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/ble/ble_manager.dart';
 import '../../core/security/app_secrets.dart';
 import '../../core/zone/safe_zone_detector.dart';
 
@@ -141,6 +146,123 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
         );
       }
+    }
+  }
+
+  /// Band 9 をBLEスキャンして見つかったデバイスを選択する
+  Future<void> _scanForBand9() async {
+    final bleManager = ref.read(bleManagerProvider);
+    final foundDevices = <DiscoveredDevice>[];
+    StreamSubscription<DiscoveredDevice>? subscription;
+
+    final result = await showDialog<DiscoveredDevice>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            // ダイアログ表示時にスキャン開始
+            subscription ??= bleManager.scanForBand9().listen(
+              (device) {
+                // 重複を除外
+                if (!foundDevices.any((d) => d.id == device.id)) {
+                  setDialogState(() {
+                    foundDevices.add(device);
+                  });
+                }
+              },
+              onError: (_) {},
+              onDone: () {},
+            );
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1E1E2E),
+              title: const Text(
+                'Band 9 をスキャン中...',
+                style: TextStyle(color: Colors.white, fontSize: 16),
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 300,
+                child: foundDevices.isEmpty
+                    ? const Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(
+                              color: Color(0xFF7C3AED),
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              'Band 9 の Bluetooth が\nオンになっているか確認してください',
+                              style: TextStyle(
+                                color: Color(0xFF8B8B9E),
+                                fontSize: 13,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: foundDevices.length,
+                        itemBuilder: (_, index) {
+                          final device = foundDevices[index];
+                          final name = device.name.isNotEmpty
+                              ? device.name
+                              : '不明なデバイス';
+                          return ListTile(
+                            leading: const Icon(
+                              Icons.watch,
+                              color: Color(0xFF7C3AED),
+                            ),
+                            title: Text(
+                              name,
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            subtitle: Text(
+                              'RSSI: ${device.rssi}dBm',
+                              style: const TextStyle(
+                                color: Color(0xFF8B8B9E),
+                                fontSize: 12,
+                              ),
+                            ),
+                            onTap: () {
+                              Navigator.of(dialogContext).pop(device);
+                            },
+                          );
+                        },
+                      ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text(
+                    'キャンセル',
+                    style: TextStyle(color: Color(0xFF8B8B9E)),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    // スキャン停止
+    await subscription?.cancel();
+
+    if (result != null && mounted) {
+      // デバイスIDを保存（iOSではUUID、AndroidではMAC）
+      await AppSecrets.saveBandMacAddress(result.id);
+      _macController.text = result.id;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${result.name.isNotEmpty ? result.name : "Band 9"} を検出しました'),
+          backgroundColor: const Color(0xFF4ECDC4),
+        ),
+      );
     }
   }
 
@@ -342,37 +464,28 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 if (_isBand9Set) _StatusBadge(label: '設定済み'),
                 if (_isBand9Set) const SizedBox(height: 12),
 
-                // MACアドレス入力
+                // Band 9 スキャンボタン
                 const Text(
-                  'MACアドレス',
+                  'デバイスID',
                   style: TextStyle(color: Color(0xFF8B8B9E), fontSize: 12),
                 ),
                 const SizedBox(height: 6),
-                TextField(
-                  controller: _macController,
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                  decoration: InputDecoration(
-                    hintText: 'AA:BB:CC:DD:EE:FF',
-                    hintStyle: const TextStyle(
-                      color: Color(0xFF4A4A5E),
-                      fontSize: 14,
-                    ),
-                    filled: true,
-                    fillColor: const Color(0xFF0A0A0F),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFF2E2E4E)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFF7C3AED)),
-                    ),
-                  ),
+                _PrimaryButton(
+                  label: 'Band 9 をスキャン',
+                  onPressed: _scanForBand9,
                 ),
+                if (_macController.text.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '検出済み: ${_macController.text}',
+                    style: const TextStyle(
+                      color: Color(0xFF4ECDC4),
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
                 const SizedBox(height: 12),
 
                 // Auth Key入力

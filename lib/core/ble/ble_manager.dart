@@ -77,7 +77,18 @@ class BleManager {
   // 公開 API
   // ----------------------------------------------------------------
 
-  /// MACアドレスを取得して Band 9 に接続する
+  /// Band 9 をスキャンして見つかったデバイスのStreamを返す
+  ///
+  /// iOS では MACアドレスでは接続できないため、
+  /// BLEスキャンで Band 9 を見つけてプラットフォーム固有のIDを取得する。
+  Stream<DiscoveredDevice> scanForBand9({Duration timeout = const Duration(seconds: 10)}) {
+    return _ble.scanForDevices(
+      withServices: [Uuid.parse(BandServiceUUIDs.main)],
+      scanMode: ScanMode.lowLatency,
+    ).timeout(timeout, onTimeout: (sink) => sink.close());
+  }
+
+  /// MACアドレスまたはデバイスIDを取得して Band 9 に接続する
   ///
   /// MACアドレス・Auth Key は AppSecrets から読み取る。
   /// 接続失敗時は [_connectWithRetry] で自動リトライする。

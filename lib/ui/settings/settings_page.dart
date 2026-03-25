@@ -154,7 +154,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final foundDevices = <DiscoveredDevice>[];
     StreamSubscription<DiscoveredDevice>? subscription;
 
-    final result = await showDialog<DiscoveredDevice>(
+    DiscoveredDevice? result;
+    try {
+    result = await showDialog<DiscoveredDevice>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -258,9 +260,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         );
       },
     );
-
-    // スキャン停止
-    await subscription?.cancel();
+    } finally {
+      // 例外・キャンセル・通常終了いずれの場合も確実にスキャンを停止する
+      await subscription?.cancel();
+    }
 
     if (result != null && mounted) {
       // デバイスIDを保存（iOSではUUID、AndroidではMAC）

@@ -93,6 +93,9 @@ class VoiceMemoRecorder {
   /// 現在録音中かどうかを管理するフラグ
   bool _isRecording = false;
 
+  /// dispose済みかどうかを管理するフラグ（タイマーコールバックのガード用）
+  bool _disposed = false;
+
   /// 録音開始時刻（録音時間の計算に使用）
   DateTime? _recordingStartedAt;
 
@@ -142,7 +145,8 @@ class VoiceMemoRecorder {
   /// - true: 録音開始に成功
   /// - false: パーミッションなし、または予期しないエラー
   Future<bool> startRecording() async {
-    // すでに録音中の場合は何もしない
+    // dispose済みまたはすでに録音中の場合は何もしない
+    if (_disposed) return false;
     if (_isRecording) {
       // ignore: avoid_print
       print('[VoiceMemoRecorder] すでに録音中のため startRecording をスキップします');
@@ -213,6 +217,7 @@ class VoiceMemoRecorder {
   /// - VoiceMemoResult: 成功（transcription は null の場合もある）
   /// - null: 録音中でない、またはファイル取得に失敗した場合
   Future<VoiceMemoResult?> stopAndTranscribe({bool isAutoSplit = false}) async {
+    if (_disposed) return null;
     if (!_isRecording) {
       // ignore: avoid_print
       print('[VoiceMemoRecorder] 録音中でないため stopAndTranscribe をスキップします');
@@ -309,6 +314,7 @@ class VoiceMemoRecorder {
 
   /// リソースを解放する（Riverpod の ref.onDispose から呼ばれる）
   Future<void> dispose() async {
+    _disposed = true;
     _autoStopTimer?.cancel();
     _autoStopTimer = null;
     try {

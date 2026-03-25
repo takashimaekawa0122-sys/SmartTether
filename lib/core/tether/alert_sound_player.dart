@@ -26,6 +26,9 @@ class AlertSoundPlayer {
   /// 振動フォールバック用タイマー
   Timer? _hapticTimer;
 
+  /// startAlert()の非同期処理中かどうか（重複呼び出しガード用）
+  bool _isStarting = false;
+
   /// 現在再生中かどうか（MP3再生 or 振動フォールバック）
   bool get isPlaying => _player.playing || _hapticTimer != null;
 
@@ -35,8 +38,9 @@ class AlertSoundPlayer {
   /// MP3の読み込みに失敗した場合は HapticFeedback による繰り返し振動にフォールバックする。
   /// すでに再生中の場合は何もしない。
   Future<void> startAlert() async {
-    // 重複再生を防ぐ
-    if (isPlaying) return;
+    // 再生中または非同期処理中の重複呼び出しを防ぐ
+    if (isPlaying || _isStarting) return;
+    _isStarting = true;
 
     try {
       // アセットを読み込んでループモードを設定
@@ -48,6 +52,8 @@ class AlertSoundPlayer {
       print('[AlertSoundPlayer] MP3再生失敗、振動にフォールバック: $e');
       // MP3がない場合はタイマーで繰り返し振動
       _startHapticLoop();
+    } finally {
+      _isStarting = false;
     }
   }
 

@@ -11,10 +11,13 @@ class SafeZoneDetector {
   static const _kPrefsKey = 'safe_zone_ssid';
 
   /// Wi-Fi情報の取得に使うパッケージインスタンス
-  final NetworkInfo _networkInfo = NetworkInfo();
+  final NetworkInfo _networkInfo;
 
   /// 現在登録中のセーフゾーンSSID（未登録はnull）
   String? _safeZoneSsid;
+
+  SafeZoneDetector({NetworkInfo? networkInfo})
+      : _networkInfo = networkInfo ?? NetworkInfo();
 
   /// 保存済みのSSIDをSharedPreferencesから読み込む
   ///

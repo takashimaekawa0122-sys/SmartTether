@@ -1,6 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:network_info_plus/network_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_tether/core/zone/safe_zone_detector.dart';
+
+class MockNetworkInfo extends Mock implements NetworkInfo {}
 
 void main() {
   group('SafeZoneDetector', () {
@@ -120,6 +124,133 @@ void main() {
       await detectorWithPrefs.initialize();
 
       expect(detectorWithPrefs.safeZoneSsid, equals(testSsid));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // MockNetworkInfo を使ったテスト
+  // ---------------------------------------------------------------------------
+
+  group('SafeZoneDetector（MockNetworkInfo使用）', () {
+    late MockNetworkInfo mockNetworkInfo;
+    late SafeZoneDetector detector;
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      mockNetworkInfo = MockNetworkInfo();
+      detector = SafeZoneDetector(networkInfo: mockNetworkInfo);
+    });
+
+    // -------------------------------------------------------------------------
+    // isInSafeZone()
+    // -------------------------------------------------------------------------
+
+    test('isInSafeZone() - SSIDが一致するときtrueを返す', () async {
+      // SSID を直接セットしてから NetworkInfo が同じ値を返すよう設定
+      SharedPreferences.setMockInitialValues({'safe_zone_ssid': 'MyHome'});
+      final d = SafeZoneDetector(networkInfo: mockNetworkInfo);
+      await d.initialize();
+
+      when(() => mockNetworkInfo.getWifiName()).thenAnswer((_) async => 'MyHome');
+
+      expect(await d.isInSafeZone(), isTrue);
+    });
+
+    test('isInSafeZone() - SSIDが不一致のときfalseを返す', () async {
+      SharedPreferences.setMockInitialValues({'safe_zone_ssid': 'MyHome'});
+      final d = SafeZoneDetector(networkInfo: mockNetworkInfo);
+      await d.initialize();
+
+      when(() => mockNetworkInfo.getWifiName()).thenAnswer((_) async => 'OtherNetwork');
+
+      expect(await d.isInSafeZone(), isFalse);
+    });
+
+    test('isInSafeZone() - NetworkInfoがnullを返すときfalseを返す', () async {
+      SharedPreferences.setMockInitialValues({'safe_zone_ssid': 'MyHome'});
+      final d = SafeZoneDetector(networkInfo: mockNetworkInfo);
+      await d.initialize();
+
+      when(() => mockNetworkInfo.getWifiName()).thenAnswer((_) async => null);
+
+      expect(await d.isInSafeZone(), isFalse);
+    });
+
+    test('isInSafeZone() - NetworkInfoが例外を投げるときfalseを返す', () async {
+      SharedPreferences.setMockInitialValues({'safe_zone_ssid': 'MyHome'});
+      final d = SafeZoneDetector(networkInfo: mockNetworkInfo);
+      await d.initialize();
+
+      when(() => mockNetworkInfo.getWifiName()).thenThrow(Exception('permission denied'));
+
+      expect(await d.isInSafeZone(), isFalse);
+    });
+
+    test('isInSafeZone() - ダブルクォート付きSSIDを正規化して一致すればtrueを返す', () async {
+      SharedPreferences.setMockInitialValues({'safe_zone_ssid': 'MyHome'});
+      final d = SafeZoneDetector(networkInfo: mockNetworkInfo);
+      await d.initialize();
+
+      // Android環境ではSSIDがダブルクォートで囲まれて返る場合がある
+      when(() => mockNetworkInfo.getWifiName()).thenAnswer((_) async => '"MyHome"');
+
+      expect(await d.isInSafeZone(), isTrue);
+    });
+
+    // -------------------------------------------------------------------------
+    // registerCurrentSsid()
+    // -------------------------------------------------------------------------
+
+    test('registerCurrentSsid() - 通常SSIDを登録してSSIDを返す', () async {
+      when(() => mockNetworkInfo.getWifiName()).thenAnswer((_) async => 'HomeNetwork');
+
+      final result = await detector.registerCurrentSsid();
+
+      expect(result, equals('HomeNetwork'));
+      expect(detector.safeZoneSsid, equals('HomeNetwork'));
+    });
+
+    test('registerCurrentSsid() - NetworkInfoがnullを返すときnullを返す', () async {
+      when(() => mockNetworkInfo.getWifiName()).thenAnswer((_) async => null);
+
+      final result = await detector.registerCurrentSsid();
+
+      expect(result, isNull);
+    });
+
+    test('registerCurrentSsid() - ダブルクォート付きSSIDを正規化して登録する', () async {
+      when(() => mockNetworkInfo.getWifiName()).thenAnswer((_) async => '"QuotedSSID"');
+
+      final result = await detector.registerCurrentSsid();
+
+      expect(result, equals('QuotedSSID'));
+      expect(detector.safeZoneSsid, equals('QuotedSSID'));
+    });
+
+    test('registerCurrentSsid() - SharedPreferencesに保存される', () async {
+      when(() => mockNetworkInfo.getWifiName()).thenAnswer((_) async => 'SavedNetwork');
+
+      await detector.registerCurrentSsid();
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('safe_zone_ssid'), equals('SavedNetwork'));
+    });
+
+    test('registerCurrentSsid() - NetworkInfoが例外を投げるときnullを返す', () async {
+      when(() => mockNetworkInfo.getWifiName()).thenThrow(Exception('wifi error'));
+
+      final result = await detector.registerCurrentSsid();
+
+      expect(result, isNull);
+    });
+
+    test('registerCurrentSsid() - 空文字（ダブルクォートのみ）のときnullを返す', () async {
+      // '""' を正規化すると空文字になるためnullを返す
+      when(() => mockNetworkInfo.getWifiName()).thenAnswer((_) async => '""');
+
+      final result = await detector.registerCurrentSsid();
+
+      expect(result, isNull);
     });
   });
 }

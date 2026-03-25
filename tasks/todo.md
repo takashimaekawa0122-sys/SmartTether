@@ -2,7 +2,7 @@
 
 ## 進行中
 
-- [ ] flutter test カバレッジ 90% 以上
+（なし）
 
 ## 完了
 
@@ -50,6 +50,9 @@
 ### iOS設定
 - [x] Info.plist: UIBackgroundModes（bluetooth-central・audio・location・fetch）
 - [x] AppDelegate.swift: CoreBluetooth State Restoration
+
+### テスト
+- [x] flutter test カバレッジ 90% 以上（92.5% 達成・全144テストパス）
 
 ### インフラ
 - [x] codemagic.yaml（iOS Ad-hocビルド設定）

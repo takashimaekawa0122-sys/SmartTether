@@ -36,6 +36,8 @@
 		<string>processing</string>
 	</array>
 	<!-- パーミッション説明文 -->
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Avalon APIが利用できないときにオフラインで音声をテキスト化します</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ボイスメモの録音に使用します</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

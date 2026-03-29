@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -31,19 +33,30 @@ class SafeZoneDetector {
       // 読み込みエラーはnull（未登録）のまま継続
       // ignore: avoid_print
       print('[SafeZoneDetector] initialize error: $e');
+    } finally {
+      _initialized = true;
     }
   }
+
+  /// 未初期化フラグ（initialize()完了前にisInSafeZone()が呼ばれた場合の防衛用）
+  bool _initialized = false;
 
   /// 現在のWi-FiがセーフゾーンSSIDと一致するか判定する
   ///
   /// 判定ロジック:
-  ///   1. SSIDが未登録 → false（安全側）
-  ///   2. Wi-Fi SSID取得に失敗 → false（安全側）
-  ///   3. 取得したSSIDが登録済みSSIDと一致 → true
+  ///   1. 未初期化なら initialize() を待ってから判定する
+  ///   2. SSIDが未登録 → false（安全側）
+  ///   3. Wi-Fi SSID取得に失敗 → false（安全側）
+  ///   4. 取得したSSIDが登録済みSSIDと一致 → true
   ///
   /// Androidではnetwork_info_plusがSSIDを `"MySSID"` のように
   /// ダブルクォート付きで返す場合があるため、比較前に除去する。
   Future<bool> isInSafeZone() async {
+    // 未初期化の場合は初期化を待ってから判定する
+    if (!_initialized) {
+      await initialize();
+    }
+
     // SSIDが未登録なら常にfalse
     if (_safeZoneSsid == null) return false;
 
@@ -125,7 +138,8 @@ class SafeZoneDetector {
 /// プロバイダー生成時に initialize() を非同期で開始する。
 final safeZoneDetectorProvider = Provider<SafeZoneDetector>((ref) {
   final detector = SafeZoneDetector();
-  // SharedPreferences から保存済みSSIDをバックグラウンドで読み込む
-  detector.initialize();
+  // SharedPreferences から保存済みSSIDをバックグラウンドで読み込む。
+  // 初期化完了前に isInSafeZone() が呼ばれた場合は内部で initialize() を待機する。
+  unawaited(detector.initialize());
   return detector;
 });

@@ -129,7 +129,7 @@ class StealthTriggerNotifier extends StateNotifier<StealthAction?> {
 
   /// BLE通知データを受信したときの処理
   ///
-  /// データ形式: 先頭バイトがボタン値（0x01 / 0x02 / 0x03）
+  /// データ形式: 先頭バイトがボタン値（0x01 / 0x03 / 0x04）
   void _onData(List<int> data) {
     if (!mounted || data.isEmpty) return;
 

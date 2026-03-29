@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:just_audio/just_audio.dart';
 
 import '../../core/timeline/timeline_entry.dart';
 
@@ -127,13 +128,82 @@ class _TimelineLeftColumn extends StatelessWidget {
 // エントリカード
 // ----------------------------------------------------------------
 
-class _EntryCard extends StatelessWidget {
+class _EntryCard extends StatefulWidget {
   final TimelineEntry entry;
 
   const _EntryCard({required this.entry});
 
   @override
+  State<_EntryCard> createState() => _EntryCardState();
+}
+
+class _EntryCardState extends State<_EntryCard> {
+  AudioPlayer? _player;
+  bool _isPlaying = false;
+
+  /// dispose済みかどうかを追跡するフラグ（mounted より先にセットして競合を防ぐ）
+  bool _disposed = false;
+
+  /// 再生開始処理が進行中かどうか（二重呼び出し防止）
+  bool _isStarting = false;
+
+  Future<void> _togglePlayback() async {
+    if (_isPlaying) {
+      await _player?.stop();
+      if (!_disposed && mounted) setState(() => _isPlaying = false);
+      return;
+    }
+
+    if (_isStarting) return;
+
+    final path = widget.entry.audioFilePath;
+    if (path == null || path.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('録音ファイルが見つかりません'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Color(0xFF1E1E2E),
+          ),
+        );
+      }
+      return;
+    }
+
+    _isStarting = true;
+    try {
+      _player ??= AudioPlayer();
+      await _player!.setFilePath(path);
+      if (!_disposed && mounted) setState(() => _isPlaying = true);
+      await _player!.play();
+    } catch (e) {
+      if (!_disposed && mounted) {
+        setState(() => _isPlaying = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('再生に失敗しました: $e'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: const Color(0xFF1E1E2E),
+          ),
+        );
+      }
+    } finally {
+      _isStarting = false;
+      // play() の完了（正常終了・エラー問わず）でボタンを停止状態に戻す
+      if (!_disposed && mounted) setState(() => _isPlaying = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _player?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final entry = widget.entry;
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -180,11 +250,9 @@ class _EntryCard extends StatelessWidget {
             Row(
               children: [
                 _ActionButton(
-                  icon: Icons.play_arrow,
-                  label: '再生',
-                  onTap: () {
-                    // TODO: 音声・文字起こしエージェントで実装
-                  },
+                  icon: _isPlaying ? Icons.stop : Icons.play_arrow,
+                  label: _isPlaying ? '停止' : '再生',
+                  onTap: _togglePlayback,
                 ),
                 const SizedBox(width: 8),
                 _ActionButton(

@@ -154,6 +154,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final foundDevices = <DiscoveredDevice>[];
     StreamSubscription<DiscoveredDevice>? subscription;
 
+    // スロットリング用: 前回 setDialogState を呼んだ時刻
+    DateTime lastDialogUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+
     DiscoveredDevice? result;
     try {
     result = await showDialog<DiscoveredDevice>(
@@ -167,15 +170,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 // 重複を除外（名前があるデバイスのみ表示）
                 if (device.name.isNotEmpty &&
                     !foundDevices.any((d) => d.id == device.id)) {
-                  setDialogState(() {
-                    // Band関連デバイスをリストの先頭に表示
-                    final isBand = _isBandDevice(device.name);
-                    if (isBand) {
-                      foundDevices.insert(0, device);
-                    } else {
-                      foundDevices.add(device);
-                    }
-                  });
+                  // Band関連デバイスをリストの先頭に表示
+                  final isBand = _isBandDevice(device.name);
+                  if (isBand) {
+                    foundDevices.insert(0, device);
+                  } else {
+                    foundDevices.add(device);
+                  }
+
+                  // 前回の UI 更新から 200ms 以上経過した場合のみ再描画する
+                  // （lowLatency スキャン時のフレームドロップを防ぐ）
+                  final now = DateTime.now();
+                  if (now.difference(lastDialogUpdate).inMilliseconds >= 200) {
+                    lastDialogUpdate = now;
+                    setDialogState(() {});
+                  }
                 }
               },
               onError: (_) {},

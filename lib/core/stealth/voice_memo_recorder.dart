@@ -286,7 +286,8 @@ class VoiceMemoRecorder {
       );
 
       // ---- 自動分割の場合は次のチャンク録音を開始する ----
-      if (isAutoSplit) {
+      // dispose が完了していた場合は再開しない（dispose直前のタイミング競合を防ぐ）
+      if (isAutoSplit && !_disposed) {
         // ignore: avoid_print
         print('[VoiceMemoRecorder] 次のチャンク録音を開始します');
         final chunkStarted = await startRecording();

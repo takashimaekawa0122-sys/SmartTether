@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/ble/rssi_smoother.dart';
 import '../core/tether/alert_state.dart';
 import '../core/timeline/timeline_entry.dart';
-import '../core/timeline/timeline_logger.dart';
 import '../core/zone/adaptive_threshold_learner.dart';
 import '../core/zone/safe_zone_detector.dart';
 
@@ -67,33 +66,28 @@ void onStart(ServiceInstance service) async {
   final safeZoneDetector = SafeZoneDetector();
   final thresholdLearner = AdaptiveThresholdLearner();
   final rssiSmoother = RSSISmoother();
-  final timelineLogger = TimelineLogger();
 
   // ---- 段階遷移のための状態変数 ----
   TetherState previousState = TetherState.monitoring;
-  DateTime? warningStartTime;
+  // 切断を最初に検知した時刻。接続回復時に null にリセットする。
+  DateTime? disconnectDetectedAt;
 
   try {
     // SharedPreferences から保存済みの設定を読み込む
     await safeZoneDetector.initialize();
     await thresholdLearner.initialize();
-    await timelineLogger.load();
   } catch (e) {
     // 初期化失敗時はデフォルト値のまま動作継続する（バックグラウンドクラッシュ防止）
     // ignore: avoid_print
     print('[BackgroundService] 初期化エラー（デフォルト値で続行）: $e');
   }
 
-  // 起動ログをタイムラインに記録する
-  try {
-    await timelineLogger.log(
-      TimelineEventType.monitoringStarted,
-      'バックグラウンド監視を開始しました',
-    );
-  } catch (e) {
-    // ignore: avoid_print
-    print('[BackgroundService] タイムラインログエラー: $e');
-  }
+  // 起動ログをIPC経由でUIへ送信する（バックグラウンドIsolate内では直接書き込まない）
+  _invokeTimelineEntry(
+    service,
+    type: TimelineEventType.monitoringStarted,
+    message: 'バックグラウンド監視を開始しました',
+  );
 
   // ---- BleManager からの RSSI 受信リスナー ----
   // メインIsolateの BleManager が invoke('rssiUpdate') した値をここで受け取る
@@ -119,12 +113,11 @@ void onStart(ServiceInstance service) async {
     monitorTimer?.cancel();
     rssiSub?.cancel();
     stopSub?.cancel();
-    try {
-      await timelineLogger.log(
-        TimelineEventType.monitoringStopped,
-        'バックグラウンド監視を停止しました',
-      );
-    } catch (_) {}
+    _invokeTimelineEntry(
+      service,
+      type: TimelineEventType.monitoringStopped,
+      message: 'バックグラウンド監視を停止しました',
+    );
     await service.stopSelf();
   });
 
@@ -141,12 +134,11 @@ void onStart(ServiceInstance service) async {
         safeZoneDetector: safeZoneDetector,
         thresholdLearner: thresholdLearner,
         rssiSmoother: rssiSmoother,
-        timelineLogger: timelineLogger,
         previousState: previousState,
-        warningStartTime: warningStartTime,
+        disconnectDetectedAt: disconnectDetectedAt,
       );
       previousState = result.state;
-      warningStartTime = result.warningStartTime;
+      disconnectDetectedAt = result.disconnectDetectedAt;
     } catch (e) {
       // 監視サイクルの例外はログに記録して次のサイクルへ続行する
       // バックグラウンドサービスのクラッシュは致命的なため、例外を外へ出さない
@@ -159,11 +151,12 @@ void onStart(ServiceInstance service) async {
 /// 監視サイクルの結果（段階遷移の状態を返すため）
 class _MonitoringCycleResult {
   final TetherState state;
-  final DateTime? warningStartTime;
+  // 切断を最初に検知した時刻。接続中・セーフゾーン中は null。
+  final DateTime? disconnectDetectedAt;
 
   const _MonitoringCycleResult({
     required this.state,
-    this.warningStartTime,
+    this.disconnectDetectedAt,
   });
 }
 
@@ -171,14 +164,18 @@ class _MonitoringCycleResult {
 ///
 /// セーフゾーン判定 → 状態決定（grace→warning→confirmed段階遷移）→ UI通知の順で処理する。
 /// 例外はすべて呼び出し元でキャッチすること。
+///
+/// フェーズ定義（30秒ループを前提とした現実的な閾値）:
+///   grace    : 0〜30秒  — 一時的な切断、バックグラウンド再接続を待つ
+///   warning  : 30〜90秒 — バンドを振動させて警告
+///   confirmed: 90秒以上 — 置き忘れ確定、全力アラート
 Future<_MonitoringCycleResult> _performMonitoringCycle({
   required ServiceInstance service,
   required SafeZoneDetector safeZoneDetector,
   required AdaptiveThresholdLearner thresholdLearner,
   required RSSISmoother rssiSmoother,
-  required TimelineLogger timelineLogger,
   required TetherState previousState,
-  required DateTime? warningStartTime,
+  required DateTime? disconnectDetectedAt,
 }) async {
   // ---- セーフゾーン判定 ----
   final inSafeZone = await safeZoneDetector.isInSafeZone();
@@ -189,16 +186,16 @@ Future<_MonitoringCycleResult> _performMonitoringCycle({
 
   // ---- 状態を決定する（grace → warning → confirmed 段階遷移） ----
   TetherState newState;
-  DateTime? newWarningStartTime = warningStartTime;
+  DateTime? newDisconnectDetectedAt = disconnectDetectedAt;
 
   if (inSafeZone) {
     // セーフゾーン（自宅Wi-Fiなど）にいる場合はスリープ状態
     newState = TetherState.sleeping;
-    newWarningStartTime = null;
+    newDisconnectDetectedAt = null;
   } else if (smoothedRssi <= -999) {
     // RSSI未取得（BLE未接続）→ 監視中として扱う
     newState = TetherState.monitoring;
-    newWarningStartTime = null;
+    newDisconnectDetectedAt = null;
   } else {
     // RSSI と閾値を比較して状態を判定する
     if (rssiSmoother.isReady) {
@@ -206,26 +203,27 @@ Future<_MonitoringCycleResult> _performMonitoringCycle({
     }
 
     if (smoothedRssi <= thresholdLearner.threshold) {
-      // RSSI が閾値以下 → 段階遷移で状態を決定する
+      // RSSI が閾値以下 → 切断継続中として段階遷移を進める
+      // 切断を最初に検知した時刻を記録する（既に記録済みの場合はそのまま）
       final now = DateTime.now();
-      newWarningStartTime ??= now;
+      newDisconnectDetectedAt ??= now;
 
-      final elapsed = now.difference(newWarningStartTime).inSeconds;
+      final elapsed = now.difference(newDisconnectDetectedAt).inSeconds;
 
-      if (elapsed < 4) {
-        // 0〜3秒: grace（猶予フェーズ）— バックグラウンド再接続中
+      if (elapsed < 30) {
+        // 0〜29秒: grace（猶予フェーズ）— 一時的切断、バックグラウンド再接続を待つ
         newState = TetherState.grace;
-      } else if (elapsed < 10) {
-        // 4〜9秒: warning（警告フェーズ）— バンドを振動させる
+      } else if (elapsed < 90) {
+        // 30〜89秒: warning（警告フェーズ）— バンドを振動させる
         newState = TetherState.warning;
       } else {
-        // 10秒以上: confirmed（確定フェーズ）— 全力アラート
+        // 90秒以上: confirmed（確定フェーズ）— 全力アラート
         newState = TetherState.confirmed;
       }
     } else {
-      // RSSI が閾値以上に回復 → 監視状態に戻し、タイマーをリセットする
+      // RSSI が閾値以上に回復 → 監視状態に戻し、切断検知タイムスタンプをリセットする
       newState = TetherState.monitoring;
-      newWarningStartTime = null;
+      newDisconnectDetectedAt = null;
     }
   }
 
@@ -239,8 +237,39 @@ Future<_MonitoringCycleResult> _performMonitoringCycle({
 
   return _MonitoringCycleResult(
     state: newState,
-    warningStartTime: newWarningStartTime,
+    disconnectDetectedAt: newDisconnectDetectedAt,
   );
+}
+
+/// バックグラウンドIsolateからUIへタイムラインエントリをIPC送信する
+///
+/// バックグラウンドIsolateと UIのIsolateはメモリ空間が分離されているため、
+/// [TimelineLogger] を直接 new しても UIの [_TimelineEntriesNotifier] には届かない。
+/// この関数を通じて invoke('timelineEntry') でエントリデータを送り、
+/// UIのリスナーで受け取って [TimelineLogger.addEntry] を呼ぶことで正しく反映される。
+void _invokeTimelineEntry(
+  ServiceInstance service, {
+  required TimelineEventType type,
+  required String message,
+  String? transcription,
+  String? audioFilePath,
+  int? audioDurationMs,
+}) {
+  try {
+    service.invoke('timelineEntry', {
+      'id': '${DateTime.now().millisecondsSinceEpoch}',
+      'timestamp': DateTime.now().toIso8601String(),
+      'type': type.name,
+      'message': message,
+      if (transcription != null) 'transcription': transcription,
+      if (audioFilePath != null) 'audioFilePath': audioFilePath,
+      if (audioDurationMs != null) 'audioDurationMs': audioDurationMs,
+    });
+  } catch (e) {
+    // invoke の失敗はサービス全体をクラッシュさせない
+    // ignore: avoid_print
+    print('[BackgroundService] timelineEntry invoke エラー: $e');
+  }
 }
 
 /// iOS バックグラウンドエントリポイント

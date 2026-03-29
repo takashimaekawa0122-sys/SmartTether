@@ -26,7 +26,18 @@ class TimelineLogger {
       audioFilePath: audioFilePath,
       audioDuration: audioDuration,
     );
+    await _addEntry(entry);
+  }
 
+  /// バックグラウンドIPC経由で受け取った既存の [TimelineEntry] を追加する
+  ///
+  /// バックグラウンドIsolateが invoke('timelineEntry') で送ったデータを
+  /// メインIsolateで復元したエントリをここに追加するために使う。
+  Future<void> addEntry(TimelineEntry entry) async {
+    await _addEntry(entry);
+  }
+
+  Future<void> _addEntry(TimelineEntry entry) async {
     _entries.insert(0, entry); // 最新が先頭
 
     // 上限を超えたら古いものを削除

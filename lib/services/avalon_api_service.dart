@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../core/security/app_secrets.dart';
 import '../core/timeline/timeline_entry.dart';
 import '../core/timeline/timeline_logger.dart';
+import 'apple_speech_service.dart';
 
 /// Avalon API 文字起こしサービス
 ///
@@ -137,17 +138,9 @@ class AvalonApiService {
   /// フォールバック付きで音声ファイルを文字起こしする
   ///
   /// まず Avalon API を試みる。失敗（null）の場合は：
-  /// 1. タイムラインに「文字起こし失敗（オフライン）」と記録する
-  /// 2. null を返す
-  ///
-  /// 将来の拡張: Apple Speech Recognition によるオフラインフォールバックを実装予定。
-  /// ```
-  /// try {
-  ///   result = await transcribe(audioFilePath);      // オンライン
-  /// } catch (e) {
-  ///   result = await _appleSpeechFallback(filePath); // オフライン（未実装）
-  /// }
-  /// ```
+  /// 1. Apple Speech Recognition（iOS オフライン）を試みる
+  /// 2. それも失敗した場合はタイムラインに「文字起こし失敗（オフライン）」と記録する
+  /// 3. null を返す
   Future<String?> transcribeWithFallback(String audioFilePath) async {
     // ---- Avalon API による文字起こしを試みる ----
     final result = await transcribe(audioFilePath);
@@ -156,13 +149,21 @@ class AvalonApiService {
       return result;
     }
 
-    // ---- フォールバック（将来実装: Apple Speech Recognition）----
-    // TODO: オフライン時は Apple Speech Recognition を呼び出す
+    // ---- フォールバック: Apple Speech Recognition（iOS オフライン）----
     // ignore: avoid_print
-    print('[AvalonApiService] Avalon API 失敗。タイムラインに記録して null を返します。');
+    print('[AvalonApiService] Avalon API 失敗。Apple Speech Recognition を試みます。');
 
-    // オフライン or API 障害時はタイムラインに静かに記録する
-    // ユーザーへの大きなアラートは出さず、タイムラインで後から確認できるようにする
+    final fallbackResult = await AppleSpeechService.transcribeFile(audioFilePath);
+
+    if (fallbackResult != null) {
+      // ignore: avoid_print
+      print('[AvalonApiService] Apple Speech Recognition 成功: ${fallbackResult.length}文字');
+      return fallbackResult;
+    }
+
+    // ignore: avoid_print
+    print('[AvalonApiService] フォールバックも失敗。タイムラインに記録します。');
+
     try {
       await _timelineLogger?.log(
         TimelineEventType.voiceMemo,
@@ -170,7 +171,6 @@ class AvalonApiService {
         audioFilePath: audioFilePath,
       );
     } catch (e) {
-      // タイムライン記録の失敗は無視する（録音ファイルは保持されている）
       // ignore: avoid_print
       print('[AvalonApiService] フォールバックタイムライン記録エラー: $e');
     }

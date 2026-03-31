@@ -84,8 +84,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
       final mac = await AppSecrets.getBandMacAddress();
       final authKey = await AppSecrets.getBandAuthKey();
-      final isMacReal = mac != null && mac != 'XX:XX:XX:XX:XX:XX';
-      final isAuthReal = authKey != null && authKey != 'X';
+      final isMacReal = AppSecrets.isValidMacAddress(mac);
+      final isAuthReal = AppSecrets.isValidAuthKey(authKey);
       if (mounted) {
         setState(() {
           _isBand9Set = isMacReal && isAuthReal;

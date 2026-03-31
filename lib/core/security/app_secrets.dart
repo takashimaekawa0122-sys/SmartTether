@@ -64,25 +64,18 @@ class AppSecrets {
     return authKey != null && macAddress != null && apiKey != null;
   }
 
-  // ===== デバイス認証情報シード（実機セットアップ）=====
+  /// Auth Keyが有効な値かどうか判定する（null・空文字は無効）
+  static bool isValidAuthKey(String? key) {
+    return key != null && key.isNotEmpty && key != 'X';
+  }
 
-  /// 実機の認証情報をKeychain/Keystoreに書き込む（未設定時のみ）
-  ///
-  /// 既に設定されている場合は上書きしない。
-  /// 設定画面から変更した値を起動のたびにリセットしないようにするため。
-  static Future<void> setDevelopmentPlaceholders() async {
-    // 未設定の場合のみ書き込む（設定画面での変更を保護する）
-    final existingMac = await getBandMacAddress();
-    if (existingMac == null) {
-      await saveBandMacAddress('XX:XX:XX:XX:XX:XX');
-    }
-    final existingAuthKey = await getBandAuthKey();
-    if (existingAuthKey == null) {
-      await saveBandAuthKey('X');
-    }
-    final existingApiKey = await getAvalonApiKey();
-    if (existingApiKey == null) {
-      await saveAvalonApiKey('X');
-    }
+  /// MACアドレスが有効な値かどうか判定する
+  static bool isValidMacAddress(String? mac) {
+    return mac != null && mac.isNotEmpty && mac != 'XX:XX:XX:XX:XX:XX';
+  }
+
+  /// APIキーが有効な値かどうか判定する
+  static bool isValidApiKey(String? key) {
+    return key != null && key.isNotEmpty && key != 'X';
   }
 }

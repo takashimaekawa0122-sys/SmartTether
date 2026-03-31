@@ -645,10 +645,11 @@ class BandAuthenticator {
     required Uint8List phoneNonce,
     required Uint8List watchNonce,
   }) {
-    // 中間鍵
+    // 中間鍵: HMAC(key=phoneNonce||watchNonce, msg=authKey)
+    // ※Gadgetbridge準拠: keyはnonce連結、messageがauthKey
     final intermediate = _hmacSha256(
-      key: authKey,
-      message: Uint8List.fromList([...phoneNonce, ...watchNonce]),
+      key: Uint8List.fromList([...phoneNonce, ...watchNonce]),
+      message: authKey,
     );
 
     // KDF: "miwear-auth" ラベルを使った HKDF 風の鍵展開

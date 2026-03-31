@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'core/security/app_secrets.dart';
 import 'services/background_service.dart';
 import 'services/notification_service.dart';
 import 'ui/alert/alert_overlay.dart';
@@ -37,13 +36,8 @@ void main() async {
     print('[main] NotificationService初期化エラー（続行）: $e');
   }
 
-  // 開発用プレースホルダーを設定（Band 9到着後に削除）
-  try {
-    await AppSecrets.setDevelopmentPlaceholders();
-  } catch (e) {
-    // ignore: avoid_print
-    print('[main] AppSecrets初期化エラー（続行）: $e');
-  }
+  // Auth Key等はnullのまま管理し、設定画面で入力する
+  // （起動時のプレースホルダー上書きはAuth Key消失の原因になるため廃止）
 
   // 初回起動チェック
   var showOnboarding = true;

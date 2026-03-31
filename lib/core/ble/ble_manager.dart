@@ -100,10 +100,11 @@ class BleManager {
       return const BleFailure('MACアドレスまたはAuth Keyが未設定です');
     }
 
-    // プレースホルダーのまま接続しない
-    if (macAddress == 'XX:XX:XX:XX:XX:XX' || authKey == 'X') {
+    // 有効な値でなければ接続しない
+    if (!AppSecrets.isValidMacAddress(macAddress) ||
+        !AppSecrets.isValidAuthKey(authKey)) {
       return const BleFailure(
-          'Band 9 未設定（到着後に Auth Key・MACアドレスを設定してください）');
+          'Band 9 未設定（Auth Key・MACアドレスを設定してください）');
     }
 
     _currentDeviceId = macAddress;

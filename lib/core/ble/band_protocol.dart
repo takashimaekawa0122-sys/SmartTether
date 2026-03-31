@@ -90,17 +90,24 @@ class VibrationPattern {
   );
 }
 
-/// 認証コマンド定義
+/// 認証コマンド定義（V2プロトコル: HMAC-SHA256 + AES-CCM）
 ///
-/// TODO: Band 9 は HMAC-SHA256 + AES-CCM (V2プロトコル) を使用する。
-///       以下の定数は旧世代プロトコル用であり、Band 9 では動作しない。
-///       V2プロトコル実装後にこのクラスを更新すること。
+/// Xiaomi Smart Band 9 の SPPv2 認証プロトコル定数。
+/// Gadgetbridge MiWear認証実装に基づく。
 class AuthCommands {
   AuthCommands._();
 
-  static const int requestAuthNumber = 0x02;
-  static const int sendEncryptedNumber = 0x04;
-  static const int authSuccess = 0x01;
+  /// CMD_NONCE: phoneNonce を送信し、watchNonce + watchHmac を受信する (subtype=26)
+  static const int cmdNonce = 26;
+
+  /// CMD_AUTH: phoneHmac を送信して認証を完了する (subtype=27)
+  static const int cmdAuth = 27;
+
+  /// CMD_SEND_USERID: ユーザーIDを送信する (subtype=5)
+  static const int cmdSendUserId = 5;
+
+  /// 認証ファミリータイプ (familyType=1)
+  static const int authTypeV2 = 1;
 }
 
 /// メディアコントロールボタン定義（ステルストリガー）

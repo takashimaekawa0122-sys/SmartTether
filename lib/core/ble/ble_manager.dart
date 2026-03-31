@@ -5,8 +5,7 @@ import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../security/app_secrets.dart';
-// TODO: V2プロトコル実装後に認証を有効化
-// import 'band_authenticator.dart';
+import 'band_authenticator.dart';
 import 'band_protocol.dart';
 import 'rssi_smoother.dart';
 
@@ -49,8 +48,7 @@ class BleManager {
   BleManager({FlutterReactiveBle? ble}) : _ble = ble ?? FlutterReactiveBle();
 
   final FlutterReactiveBle _ble;
-  // TODO: V2プロトコル実装後に認証を有効化
-  // late final BandAuthenticator _authenticator = BandAuthenticator(_ble);
+  late final BandAuthenticator _authenticator = BandAuthenticator(_ble);
   final _rssiSmoother = RSSISmoother();
 
   final _connectionStateController =
@@ -63,8 +61,7 @@ class BleManager {
 
   int _retryCount = 0;
   bool _disposed = false;
-  // TODO: V2プロトコル実装後に認証を有効化
-  final bool _isAuthenticating = false;
+  bool _isAuthenticating = false;
   String? _currentDeviceId;
 
 
@@ -212,18 +209,31 @@ class BleManager {
 
               switch (update.connectionState) {
                 case DeviceConnectionState.connected:
-                  // TODO: V2プロトコル実装後に認証を有効化
-                  // Band 9 V2プロトコル（HMAC-SHA256 + AES-CCM）は未実装のため
-                  // 認証フェーズをスキップし、接続直後にRSSI監視を開始する。
-                  // 認証なしでもRSSI監視は動作する。
-                  // 振動コマンド・ボタン検知は V2プロトコル実装後に有効になる。
+                  _isAuthenticating = true;
+                  _updateState(BleConnectionState.authenticating);
+
+                  // V2プロトコル（HMAC-SHA256 + AES-CCM）で認証を実行する
+                  final authResult =
+                      await _authenticator.authenticateV2(deviceId, authKey);
+
+                  _isAuthenticating = false;
+
+                  if (authResult is AuthFailure) {
+                    // ignore: avoid_print
+                    print('[BleManager] 認証失敗: ${authResult.error}');
+                    _updateState(BleConnectionState.error);
+                    if (!completer.isCompleted) {
+                      completer.complete(BleFailure('認証失敗: ${authResult.error}'));
+                    }
+                    return;
+                  }
 
                   _retryCount = 0;
                   _updateState(BleConnectionState.connected);
                   _startRssiPolling(deviceId);
 
                   // ignore: avoid_print
-                  print('[BleManager] 接続完了（認証スキップ・RSSI監視のみ動作）');
+                  print('[BleManager] V2認証完了・RSSI監視開始');
 
                   if (!completer.isCompleted) completer.complete(const BleSuccess(null));
 

@@ -149,19 +149,19 @@ void main() {
     });
 
     // -------------------------------------------------------------------------
-    // BandProtocol 定数の確認
+    // BandProtocol 定数の確認（V2プロトコル）
     // -------------------------------------------------------------------------
 
-    test('AuthCommands.requestAuthNumber は 0x02', () {
-      expect(AuthCommands.requestAuthNumber, equals(0x02));
+    test('AuthCommands.cmdNonce は 26', () {
+      expect(AuthCommands.cmdNonce, equals(26));
     });
 
-    test('AuthCommands.sendEncryptedNumber は 0x04', () {
-      expect(AuthCommands.sendEncryptedNumber, equals(0x04));
+    test('AuthCommands.cmdAuth は 27', () {
+      expect(AuthCommands.cmdAuth, equals(27));
     });
 
-    test('AuthCommands.authSuccess は 0x01', () {
-      expect(AuthCommands.authSuccess, equals(0x01));
+    test('AuthCommands.authTypeV2 は 1', () {
+      expect(AuthCommands.authTypeV2, equals(1));
     });
 
     // -------------------------------------------------------------------------

@@ -105,17 +105,22 @@ void main() {
   // AuthCommands
   // ---------------------------------------------------------------------------
 
-  group('AuthCommands', () {
-    test('requestAuthNumber が 0x02', () {
-      expect(AuthCommands.requestAuthNumber, equals(0x02));
+  // V2プロトコルへの移行に伴い、AuthCommands の定数を更新
+  group('AuthCommands (V2プロトコル)', () {
+    test('cmdNonce が 26', () {
+      expect(AuthCommands.cmdNonce, equals(26));
     });
 
-    test('sendEncryptedNumber が 0x04', () {
-      expect(AuthCommands.sendEncryptedNumber, equals(0x04));
+    test('cmdAuth が 27', () {
+      expect(AuthCommands.cmdAuth, equals(27));
     });
 
-    test('authSuccess が 0x01', () {
-      expect(AuthCommands.authSuccess, equals(0x01));
+    test('cmdSendUserId が 5', () {
+      expect(AuthCommands.cmdSendUserId, equals(5));
+    });
+
+    test('authTypeV2 が 1', () {
+      expect(AuthCommands.authTypeV2, equals(1));
     });
   });
 

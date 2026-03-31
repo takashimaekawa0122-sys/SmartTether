@@ -179,6 +179,18 @@ class Sppv2Packet {
     final crcCalculated = _calculateCrc16(payload);
     if (crcCalculated != crcReceived) return null;
 
+    // SESSION_CONFIG フレームは channelId/payloadType を持たない
+    // ペイロードは opcode + TLVパラメータの構造
+    if (frameType == Sppv2FrameType.sessionConfig) {
+      return Sppv2ParsedPacket(
+        frameType: frameType,
+        sequence: sequence,
+        channelId: 0,
+        payloadType: 0,
+        data: payload,
+      );
+    }
+
     if (payload.length < 2) return null;
 
     final channelId = payload[0];

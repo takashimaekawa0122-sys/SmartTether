@@ -287,14 +287,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   /// Band 9のMACアドレスとAuth Keyを保存する
+  /// MACとAuth Keyはそれぞれ独立して保存できる（片方だけでもOK）
   Future<void> _saveBand9Settings() async {
     final mac = _macController.text.trim();
     final authKey = _authKeyController.text.trim();
-    if (mac.isEmpty || authKey.isEmpty) return;
+    if (mac.isEmpty && authKey.isEmpty) return;
 
     try {
-      await AppSecrets.saveBandMacAddress(mac);
-      await AppSecrets.saveBandAuthKey(authKey);
+      if (mac.isNotEmpty) await AppSecrets.saveBandMacAddress(mac);
+      if (authKey.isNotEmpty) await AppSecrets.saveBandAuthKey(authKey);
       _macController.clear();
       _authKeyController.clear();
       if (mounted) {

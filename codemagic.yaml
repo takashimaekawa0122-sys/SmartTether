@@ -41,7 +41,7 @@ workflows:
 
       # 5. 署名なしでリリースビルド
       - name: iOS ビルド（署名なし）
-        script: flutter build ios --release --no-codesign
+        script: flutter build ios --release --no-codesign --build-number=$PROJECT_BUILD_NUMBER
 
       # 6. .app → .ipa に変換（AltStore用）
       # AltStore は IPA ファイルを受け取り、手元の Apple ID で再署名して端末にインストールする。

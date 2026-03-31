@@ -95,9 +95,10 @@ class BandAuthenticator {
   Future<AuthResult> authenticateV2(String deviceId, String authKeyHex) async {
     try {
       return await _doAuthenticate(deviceId, authKeyHex)
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 30));
     } on TimeoutException {
-      return const AuthFailure('認証タイムアウト（10秒）');
+      return const AuthFailure(
+          '認証タイムアウト（30秒）: SESSION_CONFIGへの応答またはCMD_NONCEへの応答なし');
     } catch (e) {
       return AuthFailure('認証エラー: $e');
     }
@@ -105,8 +106,17 @@ class BandAuthenticator {
 
   /// 認証フローの本体
   ///
-  /// セッション鍵をステートマシンで保持しながら、
-  /// CMD_NONCE → CMD_AUTH の2ステップを完了させる。
+  /// Gadgetbridge の XiaomiBleProtocolV2 に準拠した正しいフロー:
+  ///   Step 0: 005e に Notify をサブスクライブ
+  ///   Step 1: SESSION_CONFIG リクエストを送信（frameType=0x02, opcode=0x01）
+  ///   Step 2: Band から SESSION_CONFIG レスポンスを受信（frameType=0x02, opcode=0x02）
+  ///   Step 3: CMD_NONCE を送信（phoneNonce 16バイト）
+  ///   Step 4: Band から watchNonce(16) + watchHmac(32) を受信
+  ///   Step 5: HMAC-SHA256 + KDF でセッション鍵を導出し watchHmac を検証
+  ///   Step 6: CMD_AUTH を送信（phoneHmac 32バイト）
+  ///   Step 7: Band から認証完了レスポンスを受信
+  ///
+  /// 注意: SESSION_CONFIG ハンドシェイクなしに CMD_NONCE を送っても Band は無視する。
   Future<AuthResult> _doAuthenticate(
       String deviceId, String authKeyHex) async {
     final authKey = _hexToBytes(authKeyHex);
@@ -120,14 +130,16 @@ class BandAuthenticator {
       deviceId: deviceId,
     );
 
-    // Step 1: phoneNonce (16バイト) を生成
+    // phoneNonce (16バイト) を先に生成しておく
     final phoneNonce = _generateNonce(16);
     final completer = Completer<AuthResult>();
     late StreamSubscription<List<int>> subscription;
 
-    // ステートマシン: CMD_NONCE応答受信後に鍵を保持する
+    // ステートマシンフラグ
+    bool sessionConfigDone = false;
     SessionKeys? pendingKeys;
 
+    // Step 0: 005e に Notify をサブスクライブしてから送信する
     subscription = _ble
         .subscribeToCharacteristic(mainChannelChar)
         .listen(
@@ -136,9 +148,34 @@ class BandAuthenticator {
 
             try {
               final packet = Sppv2Packet.parse(data);
-              if (packet == null) return;
+              if (packet == null) {
+                // ignore: avoid_print
+                print('[Auth] パース失敗 raw=${data.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
+                return;
+              }
 
-              // 認証チャンネルのレスポンスのみ処理する
+              // ignore: avoid_print
+              print('[Auth] 受信 frameType=0x${packet.frameType.toRadixString(16)} '
+                  'channel=0x${packet.channelId.toRadixString(16)} '
+                  'data len=${packet.data.length}');
+
+              // --- SESSION_CONFIG レスポンス処理 ---
+              if (packet.frameType == Sppv2FrameType.sessionConfig &&
+                  !sessionConfigDone) {
+                // Bandからのセッション設定完了通知を受信
+                sessionConfigDone = true;
+                // ignore: avoid_print
+                print('[Auth] SESSION_CONFIG 受信 → CMD_NONCE を送信');
+
+                // Step 3: CMD_NONCE を送信
+                await _sendNonceCommand(
+                  mainChannelChar: mainChannelChar,
+                  phoneNonce: phoneNonce,
+                );
+                return;
+              }
+
+              // --- 認証チャンネルのレスポンス処理 ---
               if (packet.channelId != Sppv2Channel.auth) return;
 
               final rawData = packet.data;
@@ -150,7 +187,7 @@ class BandAuthenticator {
               final subType = rawData[1];
 
               if (subType == AuthCommands.cmdNonce && pendingKeys == null) {
-                // Step 2: watchNonce(16) + watchHmac(32) を受信
+                // Step 4: watchNonce(16) + watchHmac(32) を受信
                 // レイアウト: [familyType, subType, status1, status2, watchNonce(16), watchHmac(32)]
                 if (rawData.length < 4 + 16 + 32) {
                   completer.complete(
@@ -165,7 +202,7 @@ class BandAuthenticator {
                 final watchHmac = Uint8List.fromList(
                     rawData.sublist(offset + 16, offset + 16 + 32));
 
-                // Step 3: セッション鍵を導出
+                // Step 5: セッション鍵を導出
                 final keys = _deriveSessionKeys(
                   authKey: authKey,
                   phoneNonce: phoneNonce,
@@ -173,7 +210,7 @@ class BandAuthenticator {
                 );
                 pendingKeys = keys;
 
-                // Step 4: watchHmac を検証
+                // watchHmac を検証
                 // expected = HMAC-SHA256(key=decryptionKey, msg=watchNonce+phoneNonce)
                 final expected = _hmacSha256(
                   key: keys.decryptionKey,
@@ -187,7 +224,7 @@ class BandAuthenticator {
                   return;
                 }
 
-                // Step 5: CMD_AUTH コマンドを送信
+                // Step 6: CMD_AUTH コマンドを送信
                 await _sendAuthCommand(
                   mainChannelChar: mainChannelChar,
                   encryptionKey: keys.encryptionKey,
@@ -196,7 +233,7 @@ class BandAuthenticator {
                 );
               } else if (subType == AuthCommands.cmdAuth &&
                   pendingKeys != null) {
-                // CMD_AUTH 応答: 認証完了確認
+                // Step 7: CMD_AUTH 応答 — 認証完了確認
                 // status byte(rawData[2]) == 0x00 が成功
                 if (rawData.length >= 3 && rawData[2] == 0x00) {
                   completer.complete(AuthSuccess(pendingKeys!));
@@ -223,21 +260,40 @@ class BandAuthenticator {
         );
 
     try {
-      // Step 1: CMD_NONCE コマンドを送信
-      await _sendNonceCommand(
-        mainChannelChar: mainChannelChar,
-        phoneNonce: phoneNonce,
-      );
+      // Step 1: SESSION_CONFIG リクエストを送信する
+      // subscribe完了後に送信するため、わずかに待機してBLE通知登録を確実にする
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await _sendSessionConfigRequest(mainChannelChar: mainChannelChar);
+      // ignore: avoid_print
+      print('[Auth] SESSION_CONFIG 送信完了 → Bandの応答を待機中...');
       return await completer.future;
     } catch (e) {
-      return AuthFailure('CMD_NONCE 送信エラー: $e');
+      return AuthFailure('SESSION_CONFIG 送信エラー: $e');
     } finally {
       await subscription.cancel();
     }
   }
 
   // ----------------------------------------------------------------
-  // Step 1: CMD_NONCE コマンド送信
+  // Step 1: SESSION_CONFIG リクエスト送信（認証前ハンドシェイク）
+  // ----------------------------------------------------------------
+
+  /// SESSION_CONFIG リクエストを送信する
+  ///
+  /// Gadgetbridge の initializeDevice() が行う最初のパケット送信。
+  /// このパケットへの応答を受信して初めて CMD_NONCE を送ることができる。
+  Future<void> _sendSessionConfigRequest({
+    required QualifiedCharacteristic mainChannelChar,
+  }) async {
+    final packet = Sppv2Packet.buildSessionConfig(sequence: 0);
+    await _ble.writeCharacteristicWithoutResponse(
+      mainChannelChar,
+      value: packet.toList(),
+    );
+  }
+
+  // ----------------------------------------------------------------
+  // Step 3: CMD_NONCE コマンド送信
   // ----------------------------------------------------------------
 
   /// CMD_NONCE コマンドを送信する

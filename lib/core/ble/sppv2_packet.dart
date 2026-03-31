@@ -29,8 +29,24 @@ class Sppv2FrameType {
   /// ACKフレーム
   static const int ack = 0x01;
 
+  /// セッション設定フレーム（認証前のハンドシェイクに使用）
+  static const int sessionConfig = 0x02;
+
   /// コマンドフレーム
   static const int command = 0x03;
+}
+
+/// SESSION_CONFIG オペコード定義
+///
+/// Gadgetbridge: XiaomiSppPacketV2.SessionConfigPacket.OPCODE_START_SESSION_REQUEST = 1
+class Sppv2SessionOpcode {
+  Sppv2SessionOpcode._();
+
+  /// セッション開始リクエスト
+  static const int startSessionRequest = 0x01;
+
+  /// セッション開始レスポンス（Bandからの応答）
+  static const int startSessionResponse = 0x02;
 }
 
 /// SPPv2パケットの組み立て・解析クラス
@@ -53,6 +69,34 @@ class Sppv2Packet {
   static const int _magic1 = 0xa5;
   static const int _magic2 = 0xa5;
   static const int _headerLength = 6; // magic(2) + type(1) + seq(1) + len(2)
+
+  /// SESSION_CONFIG パケットを組み立てる
+  ///
+  /// 認証前に必須のハンドシェイクパケット。
+  /// Gadgetbridge: XiaomiSppPacketV2.newSessionConfigPacketBuilder()
+  ///
+  /// ペイロード構造（22バイト固定）:
+  ///   [opcode(1)]
+  ///   [type=0x01, VERSION(3): 01 00 00]
+  ///   [type=0x02, MAX_PACKET_SIZE(2): fc 00 = 64512]
+  ///   [type=0x03, TX_WIN(2): 00 20 = 32]
+  ///   [type=0x04, SEND_TIMEOUT(2): 27 10 = 10000ms]
+  static Uint8List buildSessionConfig({int sequence = 0}) {
+    // ペイロード: opcode(1) + 4つの設定パラメータ
+    final payload = Uint8List.fromList([
+      Sppv2SessionOpcode.startSessionRequest, // opcode = 0x01
+      0x01, 0x01, 0x00, 0x00,                 // VERSION: type=1, value=1.0.0
+      0x02, 0xfc, 0x00,                        // MAX_PACKET_SIZE: type=2, value=64512 (LE)
+      0x03, 0x00, 0x20,                        // TX_WIN: type=3, value=32 (LE)
+      0x04, 0x27, 0x10,                        // SEND_TIMEOUT: type=4, value=10000ms (BE)
+    ]);
+
+    return _buildFrame(
+      frameType: Sppv2FrameType.sessionConfig,
+      sequence: sequence,
+      payload: payload,
+    );
+  }
 
   /// コマンドパケットを組み立てる
   ///

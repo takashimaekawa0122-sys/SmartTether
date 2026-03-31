@@ -212,6 +212,21 @@ class BleManager {
                   _isAuthenticating = true;
                   _updateState(BleConnectionState.authenticating);
 
+                  // MTU 512 をリクエストする（Gadgetbridge: requestMtu(512) と同一）
+                  // デフォルトMTU(23)のままだとSPPv2パケットが断片化して認証失敗になる。
+                  try {
+                    final negotiatedMtu = await _ble.requestMtu(
+                      deviceId: deviceId,
+                      mtu: 512,
+                    );
+                    // ignore: avoid_print
+                    print('[BleManager] MTUネゴシエーション完了: $negotiatedMtu バイト');
+                  } catch (e) {
+                    // MTU失敗は致命的ではない（デフォルトMTUで継続）
+                    // ignore: avoid_print
+                    print('[BleManager] MTUリクエスト失敗（デフォルトで継続）: $e');
+                  }
+
                   // V2プロトコル（HMAC-SHA256 + AES-CCM）で認証を実行する
                   final authResult =
                       await _authenticator.authenticateV2(deviceId, authKey);

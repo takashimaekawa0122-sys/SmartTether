@@ -128,17 +128,7 @@
       "Bash(find /c/claude/SmartTether/.dart_tool -name *.dart)",
       "Bash(curl -sL \"https://codeberg.org/Freeyourgadget/Gadgetbridge/raw/branch/master/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiBleProtocolV2.java\")",
       "Bash(curl -sL https://codeberg.org/Freeyourgadget/Gadgetbridge/raw/branch/master/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiChannelHandler.java)",
-      "Bash(curl -sL https://codeberg.org/Freeyourgadget/Gadgetbridge/raw/branch/master/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppPacketV2.java)",
-      "Skill(update-config)",
-      "Skill(update-config:*)",
-      "Bash(jq -e '.hooks.PreCompact[] | .hooks[] | select\\(.type == \"\"command\"\"\\) | .command' \"C:/Users/takashi.maekawa/.claude/settings.json\")",
-      "Bash(git cherry-pick:*)",
-      "Bash(git stash:*)",
-      "Bash(git checkout:*)",
-      "Bash(git merge:*)",
-      "Bash(git branch:*)",
-      "Bash(git worktree:*)",
-      "Bash(find /c/claude/SmartTether/.claude/worktrees/magical-lederberg/test -type f -name *.dart)"
+      "Bash(curl -sL https://codeberg.org/Freeyourgadget/Gadgetbridge/raw/branch/master/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppPacketV2.java)"
     ]
   }
 }

@@ -132,7 +132,7 @@ class BleManager {
     try {
       final characteristic = QualifiedCharacteristic(
         serviceId: Uuid.parse(BandServiceUUIDs.main),
-        characteristicId: Uuid.parse(BandCharacteristicUUIDs.mainChannel),
+        characteristicId: Uuid.parse(BandCharacteristicUUIDs.txChannel),
         deviceId: _currentDeviceId!,
       );
 

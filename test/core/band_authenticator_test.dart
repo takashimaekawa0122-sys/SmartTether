@@ -177,7 +177,8 @@ void main() {
     test('メインチャンネル UUID が正しい形式', () {
       const uuidPattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
       final regex = RegExp(uuidPattern, caseSensitive: false);
-      expect(regex.hasMatch(BandCharacteristicUUIDs.mainChannel), isTrue);
+      expect(regex.hasMatch(BandCharacteristicUUIDs.rxChannel), isTrue);
+      expect(regex.hasMatch(BandCharacteristicUUIDs.txChannel), isTrue);
     });
   });
 

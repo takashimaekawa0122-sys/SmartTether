@@ -1,7 +1,7 @@
 name: smart_tether
 description: "Smart Tether - 置き忘れ防止＆ステルス操作アプリ（Xiaomi Smart Band 9連携）"
 publish_to: 'none'
-version: 1.0.0+1
+version: 0.2.0+6
 
 environment:
   sdk: ^3.7.0
@@ -53,6 +53,9 @@ dependencies:
 
   # ローカルデータ保存
   shared_preferences: ^2.3.2
+
+  # アプリバージョン情報取得
+  package_info_plus: ^8.0.0
 
   # ファイルシステムパス取得（ボイスメモ保存先）
   path_provider: ^2.1.5

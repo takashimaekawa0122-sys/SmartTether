@@ -34,16 +34,18 @@ class BandServiceUUIDs {
 class BandCharacteristicUUIDs {
   BandCharacteristicUUIDs._();
 
-  /// メイン送受信チャンネル (fe95 / 005e) — write no response + notify
+  /// RXチャンネル (fe95 / 005e) — notify（受信専用）
   ///
-  /// Band 9 への認証コマンド・振動コマンドの送信と
-  /// デバイスからの通知受信（ボタン検知含む）に使用する。
-  static const String mainChannel = '0000005e-0000-1000-8000-00805f9b34fb';
+  /// Band 9 からの通知受信（認証レスポンス・ボタン検知含む）に使用する。
+  /// このキャラクタリスティックに subscribe して Band からのデータを受け取る。
+  /// コマンドの書き込みには使わないこと。
+  static const String rxChannel = '0000005e-0000-1000-8000-00805f9b34fb';
 
-  /// サブ送受信チャンネル (fe95 / 005f) — write no response + notify
+  /// TXチャンネル (fe95 / 005f) — write no response（送信用）
   ///
-  /// mainChannel と同等のプロパティ。用途は調査中。
-  static const String subChannel = '0000005f-0000-1000-8000-00805f9b34fb';
+  /// Band 9 への認証コマンド・振動コマンドの送信に使用する。
+  /// コマンドはすべてこのキャラクタリスティックに書き込む。
+  static const String txChannel = '0000005f-0000-1000-8000-00805f9b34fb';
 
   /// バッテリーレベル (180f / 2a19) — 標準 BLE Battery Level Characteristic
   static const String batteryLevel = '00002a19-0000-1000-8000-00805f9b34fb';
@@ -113,7 +115,7 @@ class AuthCommands {
 /// メディアコントロールボタン定義（ステルストリガー）
 ///
 /// Band 9 のメディアコントロール画面からのボタン操作を検知する。
-/// mainChannel (005e) の Notify で受信する。
+/// rxChannel (005e) の Notify で受信する。
 ///
 /// TODO: Band 9 の実際のボタンコード値は認証後の通信で確認が必要。
 ///       現在は Gadgetbridge 調査に基づく推定値。

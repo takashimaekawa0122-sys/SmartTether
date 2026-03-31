@@ -79,7 +79,7 @@ class StealthTriggerNotifier extends StateNotifier<StealthAction?> {
     try {
       final stream = _bleManager.subscribeToCharacteristic(
         serviceUuid: BandServiceUUIDs.main,
-        characteristicUuid: BandCharacteristicUUIDs.mainChannel,
+        characteristicUuid: BandCharacteristicUUIDs.rxChannel,
       );
 
       _subscription = stream.listen(

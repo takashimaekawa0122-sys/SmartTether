@@ -124,9 +124,15 @@ class BandAuthenticator {
       return const AuthFailure('Auth Keyの形式が不正です（32文字HEX文字列が必要）');
     }
 
-    final mainChannelChar = QualifiedCharacteristic(
+    // 005e = RX（受信：subscribe用）、005f = TX（送信：write用）
+    final rxChar = QualifiedCharacteristic(
       serviceId: Uuid.parse(BandServiceUUIDs.main),
-      characteristicId: Uuid.parse(BandCharacteristicUUIDs.mainChannel),
+      characteristicId: Uuid.parse(BandCharacteristicUUIDs.rxChannel),
+      deviceId: deviceId,
+    );
+    final txChar = QualifiedCharacteristic(
+      serviceId: Uuid.parse(BandServiceUUIDs.main),
+      characteristicId: Uuid.parse(BandCharacteristicUUIDs.txChannel),
       deviceId: deviceId,
     );
 
@@ -139,9 +145,9 @@ class BandAuthenticator {
     bool sessionConfigDone = false;
     SessionKeys? pendingKeys;
 
-    // Step 0: 005e に Notify をサブスクライブしてから送信する
+    // Step 0: 005e (RX) に Notify をサブスクライブしてから送信する
     subscription = _ble
-        .subscribeToCharacteristic(mainChannelChar)
+        .subscribeToCharacteristic(rxChar)
         .listen(
           (data) async {
             if (data.isEmpty || completer.isCompleted) return;
@@ -169,7 +175,7 @@ class BandAuthenticator {
 
                 // Step 3: CMD_NONCE を送信
                 await _sendNonceCommand(
-                  mainChannelChar: mainChannelChar,
+                  txChar: txChar,
                   phoneNonce: phoneNonce,
                 );
                 return;
@@ -240,7 +246,7 @@ class BandAuthenticator {
 
                 // Step 6: CMD_AUTH コマンドを送信
                 await _sendAuthCommand(
-                  mainChannelChar: mainChannelChar,
+                  txChar: txChar,
                   encryptionKey: keys.encryptionKey,
                   phoneNonce: phoneNonce,
                   watchNonce: watchNonce,
@@ -275,7 +281,7 @@ class BandAuthenticator {
       // Step 1: SESSION_CONFIG リクエストを送信する
       // subscribe完了後に送信するため、わずかに待機してBLE通知登録を確実にする
       await Future<void>.delayed(const Duration(milliseconds: 200));
-      await _sendSessionConfigRequest(mainChannelChar: mainChannelChar);
+      await _sendSessionConfigRequest(txChar: txChar);
       // ignore: avoid_print
       print('[Auth] SESSION_CONFIG 送信完了 → Bandの応答を待機中...');
       return await completer.future;
@@ -295,11 +301,11 @@ class BandAuthenticator {
   /// Gadgetbridge の initializeDevice() が行う最初のパケット送信。
   /// このパケットへの応答を受信して初めて CMD_NONCE を送ることができる。
   Future<void> _sendSessionConfigRequest({
-    required QualifiedCharacteristic mainChannelChar,
+    required QualifiedCharacteristic txChar,
   }) async {
     final packet = Sppv2Packet.buildSessionConfig(sequence: 0);
     await _ble.writeCharacteristicWithoutResponse(
-      mainChannelChar,
+      txChar,
       value: packet.toList(),
     );
   }
@@ -321,7 +327,7 @@ class BandAuthenticator {
   ///     }
   ///   }
   Future<void> _sendNonceCommand({
-    required QualifiedCharacteristic mainChannelChar,
+    required QualifiedCharacteristic txChar,
     required Uint8List phoneNonce,
   }) async {
     // Protobuf手動エンコード
@@ -345,7 +351,7 @@ class BandAuthenticator {
     );
 
     await _ble.writeCharacteristicWithoutResponse(
-      mainChannelChar,
+      txChar,
       value: packet.toList(),
     );
   }
@@ -370,7 +376,7 @@ class BandAuthenticator {
   ///
   /// phoneHmac = HMAC-SHA256(key=encryptionKey, msg=phoneNonce+watchNonce)
   Future<void> _sendAuthCommand({
-    required QualifiedCharacteristic mainChannelChar,
+    required QualifiedCharacteristic txChar,
     required Uint8List encryptionKey,
     required Uint8List phoneNonce,
     required Uint8List watchNonce,
@@ -403,7 +409,7 @@ class BandAuthenticator {
     );
 
     await _ble.writeCharacteristicWithoutResponse(
-      mainChannelChar,
+      txChar,
       value: packet.toList(),
     );
   }

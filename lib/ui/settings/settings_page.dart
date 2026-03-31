@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/ble/ble_manager.dart';
 import '../../core/security/app_secrets.dart';
@@ -39,11 +40,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   final _macController = TextEditingController();
   final _authKeyController = TextEditingController();
   bool _isBand9Set = false;
+  String _versionString = '';
 
   @override
   void initState() {
     super.initState();
     _loadCurrentSettings();
+    _loadVersionInfo();
   }
 
   @override
@@ -52,6 +55,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _macController.dispose();
     _authKeyController.dispose();
     super.dispose();
+  }
+
+  /// バージョン情報を読み込む
+  Future<void> _loadVersionInfo() async {
+    final info = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() {
+        _versionString = 'v${info.version} (build ${info.buildNumber})';
+      });
+    }
   }
 
   /// 起動時に既存の設定値を読み込む
@@ -548,6 +561,20 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
 
           const SizedBox(height: 32),
+
+          // ---- バージョン情報 ----
+          if (_versionString.isNotEmpty)
+            Center(
+              child: Text(
+                _versionString,
+                style: const TextStyle(
+                  color: Color(0xFF4A4A5E),
+                  fontSize: 12,
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 24),
         ],
       ),
     );

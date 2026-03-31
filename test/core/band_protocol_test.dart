@@ -34,16 +34,16 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('BandCharacteristicUUIDs', () {
-    test('mainChannel UUID が正しい値を持つ', () {
+    test('rxChannel UUID が正しい値を持つ', () {
       expect(
-        BandCharacteristicUUIDs.mainChannel,
+        BandCharacteristicUUIDs.rxChannel,
         equals('0000005e-0000-1000-8000-00805f9b34fb'),
       );
     });
 
-    test('subChannel UUID が正しい値を持つ', () {
+    test('txChannel UUID が正しい値を持つ', () {
       expect(
-        BandCharacteristicUUIDs.subChannel,
+        BandCharacteristicUUIDs.txChannel,
         equals('0000005f-0000-1000-8000-00805f9b34fb'),
       );
     });

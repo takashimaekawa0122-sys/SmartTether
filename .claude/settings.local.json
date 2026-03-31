@@ -131,7 +131,8 @@
       "Bash(curl -sL https://codeberg.org/Freeyourgadget/Gadgetbridge/raw/branch/master/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppPacketV2.java)",
       "Skill(update-config)",
       "Skill(update-config:*)",
-      "Bash(jq -e '.hooks.PreCompact[] | .hooks[] | select\\(.type == \"\"command\"\"\\) | .command' \"C:/Users/takashi.maekawa/.claude/settings.json\")"
+      "Bash(jq -e '.hooks.PreCompact[] | .hooks[] | select\\(.type == \"\"command\"\"\\) | .command' \"C:/Users/takashi.maekawa/.claude/settings.json\")",
+      "Bash(git cherry-pick:*)"
     ]
   }
 }

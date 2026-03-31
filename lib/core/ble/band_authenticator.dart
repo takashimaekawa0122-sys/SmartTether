@@ -179,28 +179,42 @@ class BandAuthenticator {
               if (packet.channelId != Sppv2Channel.auth) return;
 
               final rawData = packet.data;
+              if (rawData.isEmpty) return;
 
-              // レスポンスヘッダー: [familyType(1), subType(1), ...]
-              if (rawData.length < 2) return;
-              if (rawData[0] != AuthCommands.authTypeV2) return;
+              // Protobuf デコード: Command { type(1), subtype(2), auth(3) }
+              final parsed = _parseProtoCommand(rawData);
+              if (parsed == null) {
+                // ignore: avoid_print
+                print('[Auth] Protobufデコード失敗 raw=${rawData.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
+                return;
+              }
 
-              final subType = rawData[1];
+              final type = parsed['type'] as int?;
+              final subType = parsed['subtype'] as int?;
+
+              // ignore: avoid_print
+              print('[Auth] CMD受信 type=$type subtype=$subType');
+
+              if (type != AuthCommands.authTypeV2) return;
 
               if (subType == AuthCommands.cmdNonce && pendingKeys == null) {
                 // Step 4: watchNonce(16) + watchHmac(32) を受信
-                // レイアウト: [familyType, subType, status1, status2, watchNonce(16), watchHmac(32)]
-                if (rawData.length < 4 + 16 + 32) {
+                // Protobuf: Auth.watchNonce { nonce(1): bytes, hmac(2): bytes }
+                final watchNonce = parsed['watchNonce'] as Uint8List?;
+                final watchHmac = parsed['watchHmac'] as Uint8List?;
+
+                if (watchNonce == null || watchHmac == null) {
                   completer.complete(
-                    const AuthFailure('CMD_NONCE応答のデータ長が不足しています'),
+                    const AuthFailure('CMD_NONCE応答: watchNonce/watchHmacが取得できません'),
                   );
                   return;
                 }
-
-                const offset = 4; // ヘッダー4バイトをスキップ
-                final watchNonce =
-                    Uint8List.fromList(rawData.sublist(offset, offset + 16));
-                final watchHmac = Uint8List.fromList(
-                    rawData.sublist(offset + 16, offset + 16 + 32));
+                if (watchNonce.length != 16 || watchHmac.length != 32) {
+                  completer.complete(
+                    AuthFailure('CMD_NONCE応答のデータ長不正: nonce=${watchNonce.length} hmac=${watchHmac.length}'),
+                  );
+                  return;
+                }
 
                 // Step 5: セッション鍵を導出
                 final keys = _deriveSessionKeys(
@@ -234,15 +248,13 @@ class BandAuthenticator {
               } else if (subType == AuthCommands.cmdAuth &&
                   pendingKeys != null) {
                 // Step 7: CMD_AUTH 応答 — 認証完了確認
-                // status byte(rawData[2]) == 0x00 が成功
-                if (rawData.length >= 3 && rawData[2] == 0x00) {
+                // Auth.status == 0 が成功
+                final status = parsed['status'] as int? ?? -1;
+                if (status == 0) {
                   completer.complete(AuthSuccess(pendingKeys!));
                 } else {
-                  final status = rawData.length >= 3
-                      ? '0x${rawData[2].toRadixString(16)}'
-                      : '不明';
                   completer.complete(
-                    AuthFailure('CMD_AUTH 認証失敗（ステータス: $status）'),
+                    AuthFailure('CMD_AUTH 認証失敗（status: $status）'),
                   );
                 }
               }
@@ -298,17 +310,32 @@ class BandAuthenticator {
 
   /// CMD_NONCE コマンドを送信する
   ///
-  /// コマンドデータ構造:
-  ///   [authTypeV2=1, cmdNonce=26, 0x00, 0x00, 0x02, 0x02, phoneNonce(16)]
+  /// Xiaomi Protobuf（xiaomi.proto）に従ったコマンド構造:
+  ///   Command {
+  ///     type: 1         (field 1, varint)
+  ///     subtype: 26     (field 2, varint = CMD_NONCE)
+  ///     auth {          (field 3, length-delimited)
+  ///       phoneNonce {  (field 30, length-delimited)
+  ///         nonce: [16バイト]  (field 1, bytes)
+  ///       }
+  ///     }
+  ///   }
   Future<void> _sendNonceCommand({
     required QualifiedCharacteristic mainChannelChar,
     required Uint8List phoneNonce,
   }) async {
+    // Protobuf手動エンコード
+    // PhoneNonce { nonce(field=1, bytes): phoneNonce }
+    final phoneNonceMsg = _protoBytes(field: 1, value: phoneNonce);
+
+    // Auth { phoneNonce(field=30, message): phoneNonceMsg }
+    final authMsg = _protoMessage(field: 30, value: phoneNonceMsg);
+
+    // Command { type(field=1)=1, subtype(field=2)=26, auth(field=3): authMsg }
     final commandData = <int>[
-      AuthCommands.authTypeV2, // familyType = 1
-      AuthCommands.cmdNonce,   // subtype = 26
-      0x00, 0x00, 0x02, 0x02, // ヘッダー
-      ...phoneNonce,           // 16バイトのphoneNonce
+      ..._protoVarint(field: 1, value: 1),                  // type = 1
+      ..._protoVarint(field: 2, value: AuthCommands.cmdNonce), // subtype = 26
+      ..._protoMessage(field: 3, value: authMsg),            // auth
     ];
 
     final packet = Sppv2Packet.buildCommand(
@@ -329,9 +356,19 @@ class BandAuthenticator {
 
   /// CMD_AUTH コマンドを送信する
   ///
-  /// コマンドデータ構造:
-  ///   [authTypeV2=1, cmdAuth=27, phoneHmac(32)]
-  ///   phoneHmac = HMAC-SHA256(key=encryptionKey, msg=phoneNonce+watchNonce)
+  /// Xiaomi Protobuf（xiaomi.proto）に従ったコマンド構造:
+  ///   Command {
+  ///     type: 1         (field 1, varint)
+  ///     subtype: 27     (field 2, varint = CMD_AUTH)
+  ///     auth {          (field 3, length-delimited)
+  ///       authStep3 {   (field 32, length-delimited)
+  ///         encryptedNonces: phoneHmac(32バイト)  (field 1, bytes)
+  ///         encryptedDeviceInfo: [空]              (field 2, bytes)
+  ///       }
+  ///     }
+  ///   }
+  ///
+  /// phoneHmac = HMAC-SHA256(key=encryptionKey, msg=phoneNonce+watchNonce)
   Future<void> _sendAuthCommand({
     required QualifiedCharacteristic mainChannelChar,
     required Uint8List encryptionKey,
@@ -343,10 +380,20 @@ class BandAuthenticator {
       message: Uint8List.fromList([...phoneNonce, ...watchNonce]),
     );
 
+    // AuthStep3 { encryptedNonces(field=1): phoneHmac, encryptedDeviceInfo(field=2): [] }
+    final authStep3Msg = <int>[
+      ..._protoBytes(field: 1, value: phoneHmac),
+      ..._protoBytes(field: 2, value: Uint8List(0)),
+    ];
+
+    // Auth { authStep3(field=32, message): authStep3Msg }
+    final authMsg = _protoMessage(field: 32, value: authStep3Msg);
+
+    // Command { type(field=1)=1, subtype(field=2)=27, auth(field=3): authMsg }
     final commandData = <int>[
-      AuthCommands.authTypeV2, // familyType = 1
-      AuthCommands.cmdAuth,    // subtype = 27
-      ...phoneHmac,            // 32バイトのHMAC
+      ..._protoVarint(field: 1, value: 1),                  // type = 1
+      ..._protoVarint(field: 2, value: AuthCommands.cmdAuth), // subtype = 27
+      ..._protoMessage(field: 3, value: authMsg),            // auth
     ];
 
     final packet = Sppv2Packet.buildCommand(
@@ -359,6 +406,213 @@ class BandAuthenticator {
       mainChannelChar,
       value: packet.toList(),
     );
+  }
+
+  // ----------------------------------------------------------------
+  // Protobuf 手動エンコードユーティリティ
+  // ----------------------------------------------------------------
+
+  // ----------------------------------------------------------------
+  // Protobuf 手動デコードユーティリティ
+  // ----------------------------------------------------------------
+
+  /// 受信したProtobufバイト列をデコードして認証情報を取り出す
+  ///
+  /// Command { type(1), subtype(2), auth(3) } を解析する。
+  /// auth フィールドからは watchNonce, watchHmac, status を取り出す。
+  ///
+  /// 戻り値マップのキー:
+  ///   'type'       : int  — Command.type
+  ///   'subtype'    : int  — Command.subtype
+  ///   'status'     : int  — Auth.status
+  ///   'watchNonce' : Uint8List — Auth.watchNonce.nonce
+  ///   'watchHmac'  : Uint8List — Auth.watchNonce.hmac
+  ///
+  /// デコード失敗時は null を返す。
+  Map<String, dynamic>? _parseProtoCommand(Uint8List data) {
+    try {
+      final result = <String, dynamic>{};
+      var pos = 0;
+
+      while (pos < data.length) {
+        final tagResult = _decodeVarint(data, pos);
+        if (tagResult == null) break;
+        final tag = tagResult.$1;
+        pos = tagResult.$2;
+
+        final fieldNumber = tag >> 3;
+        final wireType = tag & 0x7;
+
+        if (wireType == 0) {
+          // varint
+          final valResult = _decodeVarint(data, pos);
+          if (valResult == null) break;
+          final val = valResult.$1;
+          pos = valResult.$2;
+          if (fieldNumber == 1) result['type'] = val;
+          if (fieldNumber == 2) result['subtype'] = val;
+        } else if (wireType == 2) {
+          // length-delimited
+          final lenResult = _decodeVarint(data, pos);
+          if (lenResult == null) break;
+          final len = lenResult.$1;
+          pos = lenResult.$2;
+          if (pos + len > data.length) break;
+          final bytes = Uint8List.fromList(data.sublist(pos, pos + len));
+          pos += len;
+
+          if (fieldNumber == 3) {
+            // Auth メッセージをネストデコード
+            _parseProtoAuth(bytes, result);
+          }
+        } else {
+          // 未対応のwireTypeはスキップできないので終了
+          break;
+        }
+      }
+
+      return result.isEmpty ? null : result;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Auth Protobufメッセージを解析してresultに格納する
+  ///
+  /// Auth { userId(7), status(8), watchNonce(31) { nonce(1), hmac(2) } }
+  void _parseProtoAuth(Uint8List data, Map<String, dynamic> result) {
+    var pos = 0;
+    while (pos < data.length) {
+      final tagResult = _decodeVarint(data, pos);
+      if (tagResult == null) break;
+      final tag = tagResult.$1;
+      pos = tagResult.$2;
+
+      final fieldNumber = tag >> 3;
+      final wireType = tag & 0x7;
+
+      if (wireType == 0) {
+        final valResult = _decodeVarint(data, pos);
+        if (valResult == null) break;
+        final val = valResult.$1;
+        pos = valResult.$2;
+        if (fieldNumber == 8) result['status'] = val; // Auth.status
+      } else if (wireType == 2) {
+        final lenResult = _decodeVarint(data, pos);
+        if (lenResult == null) break;
+        final len = lenResult.$1;
+        pos = lenResult.$2;
+        if (pos + len > data.length) break;
+        final bytes = Uint8List.fromList(data.sublist(pos, pos + len));
+        pos += len;
+
+        if (fieldNumber == 31) {
+          // WatchNonce { nonce(1): bytes, hmac(2): bytes }
+          _parseProtoWatchNonce(bytes, result);
+        }
+      } else {
+        break;
+      }
+    }
+  }
+
+  /// WatchNonce Protobufメッセージを解析してresultに格納する
+  void _parseProtoWatchNonce(Uint8List data, Map<String, dynamic> result) {
+    var pos = 0;
+    while (pos < data.length) {
+      final tagResult = _decodeVarint(data, pos);
+      if (tagResult == null) break;
+      final tag = tagResult.$1;
+      pos = tagResult.$2;
+
+      final fieldNumber = tag >> 3;
+      final wireType = tag & 0x7;
+
+      if (wireType == 2) {
+        final lenResult = _decodeVarint(data, pos);
+        if (lenResult == null) break;
+        final len = lenResult.$1;
+        pos = lenResult.$2;
+        if (pos + len > data.length) break;
+        final bytes = Uint8List.fromList(data.sublist(pos, pos + len));
+        pos += len;
+
+        if (fieldNumber == 1) result['watchNonce'] = bytes;
+        if (fieldNumber == 2) result['watchHmac'] = bytes;
+      } else if (wireType == 0) {
+        final valResult = _decodeVarint(data, pos);
+        if (valResult == null) break;
+        pos = valResult.$2;
+      } else {
+        break;
+      }
+    }
+  }
+
+  /// Protobuf varint を指定オフセットからデコードする
+  ///
+  /// 戻り値: (デコード値, 次のオフセット) または null（デコード失敗）
+  (int, int)? _decodeVarint(Uint8List data, int offset) {
+    var value = 0;
+    var shift = 0;
+    var pos = offset;
+    while (pos < data.length) {
+      final b = data[pos++];
+      value |= (b & 0x7F) << shift;
+      shift += 7;
+      if ((b & 0x80) == 0) return (value, pos);
+      if (shift >= 63) return null; // オーバーフロー防止
+    }
+    return null;
+  }
+
+  /// Protobuf varint フィールドをエンコードする
+  ///
+  /// wire type 0: varint
+  /// tag = (field_number << 3) | 0
+  List<int> _protoVarint({required int field, required int value}) {
+    final tag = (field << 3) | 0; // wire type 0 = varint
+    final result = <int>[];
+    // タグをvarintエンコード
+    result.addAll(_encodeVarint(tag));
+    // 値をvarintエンコード
+    result.addAll(_encodeVarint(value));
+    return result;
+  }
+
+  /// Protobuf bytes フィールドをエンコードする
+  ///
+  /// wire type 2: length-delimited
+  List<int> _protoBytes({required int field, required Uint8List value}) {
+    final tag = (field << 3) | 2; // wire type 2 = length-delimited
+    final result = <int>[];
+    result.addAll(_encodeVarint(tag));
+    result.addAll(_encodeVarint(value.length));
+    result.addAll(value);
+    return result;
+  }
+
+  /// Protobuf embedded message フィールドをエンコードする
+  ///
+  /// wire type 2: length-delimited（メッセージもbytesと同じwire type）
+  List<int> _protoMessage({required int field, required List<int> value}) {
+    final tag = (field << 3) | 2; // wire type 2 = length-delimited
+    final result = <int>[];
+    result.addAll(_encodeVarint(tag));
+    result.addAll(_encodeVarint(value.length));
+    result.addAll(value);
+    return result;
+  }
+
+  /// 整数をProtobuf varint形式にエンコードする
+  List<int> _encodeVarint(int value) {
+    final result = <int>[];
+    while (value > 0x7F) {
+      result.add((value & 0x7F) | 0x80);
+      value >>= 7;
+    }
+    result.add(value & 0x7F);
+    return result;
   }
 
   // ----------------------------------------------------------------

@@ -64,7 +64,7 @@ class Sppv2SessionOpcode {
 ///   [TP]      タイプ: 0x01=平文, 0x02=暗号化済み (1バイト)
 ///   [data]    実際のコマンドデータ
 ///
-/// CRC16アルゴリズム: CCITT/XMODEM (多項式: 0x1021, 初期値: 0x0000)
+/// CRC16アルゴリズム: CRC-16/ARC (多項式: 0x8005, 初期値: 0x0000, refin/refout: true)
 class Sppv2Packet {
   static const int _magic1 = 0xa5;
   static const int _magic2 = 0xa5;
@@ -73,22 +73,22 @@ class Sppv2Packet {
   /// SESSION_CONFIG パケットを組み立てる
   ///
   /// 認証前に必須のハンドシェイクパケット。
-  /// Gadgetbridge: XiaomiSppPacketV2.newSessionConfigPacketBuilder()
+  /// Gadgetbridge: XiaomiSppPacketV2.SessionConfigPacket.getPacketPayloadBytes()
   ///
-  /// ペイロード構造（22バイト固定）:
+  /// ペイロード構造（各KEYの後に2バイト長さフィールドが続くTLV形式）:
   ///   [opcode(1)]
-  ///   [type=0x01, VERSION(3): 01 00 00]
-  ///   [type=0x02, MAX_PACKET_SIZE(2): fc 00 = 64512]
-  ///   [type=0x03, TX_WIN(2): 00 20 = 32]
-  ///   [type=0x04, SEND_TIMEOUT(2): 27 10 = 10000ms]
+  ///   [key=0x01, len=0x03 0x00, VERSION(3): 01 00 00]
+  ///   [key=0x02, len=0x02 0x00, MAX_PACKET_SIZE(2): 00 fc = 64512 LE]
+  ///   [key=0x03, len=0x02 0x00, TX_WIN(2): 20 00 = 32 LE]
+  ///   [key=0x04, len=0x02 0x00, SEND_TIMEOUT(2): 10 27 = 10000ms LE]
   static Uint8List buildSessionConfig({int sequence = 0}) {
-    // ペイロード: opcode(1) + 4つの設定パラメータ
+    // ペイロード: opcode(1) + 4つの設定パラメータ（TLV形式: key + 2バイト長 + value）
     final payload = Uint8List.fromList([
       Sppv2SessionOpcode.startSessionRequest, // opcode = 0x01
-      0x01, 0x01, 0x00, 0x00,                 // VERSION: type=1, value=1.0.0
-      0x02, 0xfc, 0x00,                        // MAX_PACKET_SIZE: type=2, value=64512 (LE)
-      0x03, 0x00, 0x20,                        // TX_WIN: type=3, value=32 (LE)
-      0x04, 0x27, 0x10,                        // SEND_TIMEOUT: type=4, value=10000ms (BE)
+      0x01, 0x03, 0x00, 0x01, 0x00, 0x00,   // VERSION: key=1, len=3, value=1.0.0
+      0x02, 0x02, 0x00, 0x00, 0xfc,          // MAX_PACKET_SIZE: key=2, len=2, value=64512 LE
+      0x03, 0x02, 0x00, 0x20, 0x00,          // TX_WIN: key=3, len=2, value=32 LE
+      0x04, 0x02, 0x00, 0x10, 0x27,          // SEND_TIMEOUT: key=4, len=2, value=10000ms LE
     ]);
 
     return _buildFrame(
@@ -194,25 +194,35 @@ class Sppv2Packet {
     );
   }
 
-  /// CRC16 CCITT/XMODEM アルゴリズム
+  /// CRC-16/ARC アルゴリズム
   ///
-  /// 多項式: 0x1021
+  /// Gadgetbridge: XiaomiSppPacketV2.calculatePayloadChecksum() と同一仕様
+  ///
+  /// 多項式: 0x8005
   /// 初期値: 0x0000
-  /// 入力反転: なし
-  /// 出力反転: なし
+  /// 入力反転: あり (refin=true)
+  /// 出力反転: あり (refout=true)
+  /// XORout: 0x0000
+  ///
+  /// 実装: crcを上位32ビットで演算し、各バイトのビットをLSBから処理する。
+  /// 最終結果は Integer.reverse() 相当の操作で上位16ビットを取り出す。
   static int _calculateCrc16(Uint8List data) {
-    var crc = 0x0000;
-    for (final byte in data) {
-      crc ^= (byte & 0xFF) << 8;
-      for (var i = 0; i < 8; i++) {
-        if ((crc & 0x8000) != 0) {
-          crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
-        } else {
-          crc = (crc << 1) & 0xFFFF;
+    var crc = 0;
+    for (final b in data) {
+      for (var j = 0; j < 8; j++) {
+        crc = (crc << 1) & 0xFFFFFFFF;
+        if ((((crc >> 16) & 1) ^ ((b >> j) & 1)) == 1) {
+          crc ^= 0x8005;
         }
       }
     }
-    return crc;
+    // Integer.reverse(crc) >>> 16 相当:
+    // 32ビット整数を左右反転し、上位16ビットを取り出す
+    var reversed = 0;
+    for (var i = 0; i < 32; i++) {
+      reversed = (reversed << 1) | ((crc >> i) & 1);
+    }
+    return (reversed >> 16) & 0xFFFF;
   }
 }
 

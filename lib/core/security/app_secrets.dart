@@ -64,13 +64,25 @@ class AppSecrets {
     return authKey != null && macAddress != null && apiKey != null;
   }
 
-  // ===== 開発用（プレースホルダー設定）=====
+  // ===== デバイス認証情報シード（実機セットアップ）=====
 
-  /// 開発用のプレースホルダーを設定する
-  /// Band 9到着後に実際の値に置き換える
+  /// 実機の認証情報をKeychain/Keystoreに書き込む（未設定時のみ）
+  ///
+  /// 既に設定されている場合は上書きしない。
+  /// 設定画面から変更した値を起動のたびにリセットしないようにするため。
   static Future<void> setDevelopmentPlaceholders() async {
-    await saveBandAuthKey('X'); // TODO: Band 9到着後に実際のAuth Keyに変更
-    await saveBandMacAddress('XX:XX:XX:XX:XX:XX'); // TODO: 実際のMACアドレスに変更
-    await saveAvalonApiKey('X'); // TODO: 実際のAvalon APIキーに変更
+    // 未設定の場合のみ書き込む（設定画面での変更を保護する）
+    final existingMac = await getBandMacAddress();
+    if (existingMac == null) {
+      await saveBandMacAddress('XX:XX:XX:XX:XX:XX');
+    }
+    final existingAuthKey = await getBandAuthKey();
+    if (existingAuthKey == null) {
+      await saveBandAuthKey('X');
+    }
+    final existingApiKey = await getAvalonApiKey();
+    if (existingApiKey == null) {
+      await saveAvalonApiKey('X');
+    }
   }
 }

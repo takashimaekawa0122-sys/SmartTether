@@ -1,48 +1,51 @@
-# Flutter/Dart
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.packages
-.pub-cache/
-.pub/
-build/
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
 *.iml
-
-# iOS
-ios/Pods/
-ios/.symlinks/
-ios/Flutter/Flutter.framework
-ios/Flutter/Flutter.podspec
-ios/Runner/GeneratedPluginRegistrant.*
-ios/Runner.xcworkspace/
-*.xcworkspace/
-
-# Android
-android/.gradle/
-android/local.properties
-android/key.properties
-android/app/google-services.json
-*.jks
-*.keystore
-
-# 秘密情報・環境変数（絶対にコミットしない）
-.env
-*.env
-secrets.json
-auth_key.txt
-
-# IDE
-.idea/
-.vscode/
 *.ipr
 *.iws
+.idea/
 
-# macOS
-.DS_Store
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
 
-# Windows
-Thumbs.db
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
 
-# ログ・一時ファイル
-*.log
-*.tmp
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# flutter_secure_storage（Keychain保存のため、ローカルの秘密情報はコミットしない）
+# ※ app_secrets.dart の実装値は意図的にコミット対象（flutter_secure_storageに書き込むシード値）
+
+# Codemagic
+.flutter-plugins

@@ -107,7 +107,10 @@ class TimelineEntry {
   factory TimelineEntry.fromJson(Map<String, dynamic> json) => TimelineEntry(
     id: json['id'] as String,
     timestamp: DateTime.parse(json['timestamp'] as String),
-    type: TimelineEventType.values.byName(json['type'] as String),
+    type: TimelineEventType.values.firstWhere(
+      (e) => e.name == json['type'] as String,
+      orElse: () => TimelineEventType.monitoringStarted,
+    ),
     message: json['message'] as String,
     transcription: json['transcription'] as String?,
     audioFilePath: json['audioFilePath'] as String?,

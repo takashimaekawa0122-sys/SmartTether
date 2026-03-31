@@ -37,6 +37,15 @@ class RSSISmoother {
   /// ウィンドウが満杯かどうか（信頼性の目安）
   bool get isReady => _window.length >= windowSize;
 
+  /// スムージング済みの値を直接設定する（IPC受信用）
+  ///
+  /// メインIsolateで既にスムージング済みの値を受け取る場合に使用する。
+  /// ウィンドウをクリアして単一値のみ保持する（二重スムージング防止）。
+  void setDirectValue(int rssi) {
+    _window.clear();
+    _window.addLast(rssi);
+  }
+
   /// データをリセット（再接続時などに使用）
   void reset() {
     _window.clear();

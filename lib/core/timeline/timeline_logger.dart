@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'timeline_entry.dart';
 
@@ -17,7 +18,7 @@ class TimelineLogger {
     Duration? audioDuration,
   }) async {
     final entry = TimelineEntry(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: '${DateTime.now().millisecondsSinceEpoch}_${_entries.length}',
       timestamp: DateTime.now(),
       type: type,
       message: message,
@@ -35,9 +36,14 @@ class TimelineLogger {
 
     await _persist();
 
-    // リスナーに通知
-    for (final listener in _listeners) {
-      listener(entry);
+    // リスナーに通知（1つが例外をスローしても後続リスナーは呼び続ける）
+    for (final listener in List.of(_listeners)) {
+      try {
+        listener(entry);
+      } catch (e) {
+        // ignore: avoid_print
+        print('[TimelineLogger] リスナー例外: $e');
+      }
     }
   }
 
@@ -77,3 +83,11 @@ class TimelineLogger {
     await prefs.setString(_storageKey, jsonStr);
   }
 }
+
+/// TimelineLogger の Riverpod プロバイダー
+///
+/// アプリ全体でシングルトンとして使用する。
+/// voice_memo_recorder.dart など他のファイルからはここを import する。
+final timelineLoggerProvider = Provider<TimelineLogger>((ref) {
+  return TimelineLogger();
+});

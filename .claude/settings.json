@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /c/claude/SmartTether && if echo \"$CLAUDE_TOOL_INPUT\" | grep -q '\\.dart'; then echo '=== flutter analyze ===' && flutter analyze --no-pub 2>&1 | tail -20; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

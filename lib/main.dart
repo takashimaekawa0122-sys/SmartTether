@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'core/timeline/timeline_entry.dart';
+import 'core/timeline/timeline_logger.dart';
 import 'services/background_service.dart';
 import 'services/notification_service.dart';
 import 'ui/alert/alert_overlay.dart';
@@ -75,10 +80,54 @@ class _HomeStack extends StatelessWidget {
   }
 }
 
-class SmartTetherApp extends StatelessWidget {
+/// アプリのルートウィジェット
+///
+/// [ConsumerStatefulWidget] を使うことで Riverpod の [timelineLoggerProvider] に
+/// アクセスしながら、バックグラウンドIPC（'timelineEntry'）の購読ライフサイクルを
+/// 適切に管理する。
+class SmartTetherApp extends ConsumerStatefulWidget {
   final bool showOnboarding;
 
   const SmartTetherApp({super.key, required this.showOnboarding});
+
+  @override
+  ConsumerState<SmartTetherApp> createState() => _SmartTetherAppState();
+}
+
+class _SmartTetherAppState extends ConsumerState<SmartTetherApp> {
+  StreamSubscription<Map<String, dynamic>?>? _timelineEntrySub;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribeToBackgroundTimeline();
+  }
+
+  /// バックグラウンドIsolateからの 'timelineEntry' イベントを購読する
+  ///
+  /// バックグラウンドサービスが _invokeTimelineEntry() で送ったデータを受け取り、
+  /// UIIsolateの [TimelineLogger] インスタンスに [TimelineLogger.addEntry] で追記する。
+  /// これにより [_TimelineEntriesNotifier] のリスナー経由でタイムライン画面が更新される。
+  void _subscribeToBackgroundTimeline() {
+    _timelineEntrySub =
+        FlutterBackgroundService().on('timelineEntry').listen((data) async {
+      if (data == null) return;
+      try {
+        final entry = TimelineEntry.fromJson(data);
+        final logger = ref.read(timelineLoggerProvider);
+        await logger.addEntry(entry);
+      } catch (e) {
+        // ignore: avoid_print
+        print('[SmartTetherApp] timelineEntry 受信エラー: $e');
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timelineEntrySub?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -95,7 +144,7 @@ class SmartTetherApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: showOnboarding ? const OnboardingPage() : const _HomeStack(),
+      home: widget.showOnboarding ? const OnboardingPage() : const _HomeStack(),
     );
   }
 }

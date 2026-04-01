@@ -81,11 +81,11 @@ class StealthCommandHandler {
   /// [command] : BLEメディアコントロールボタンから受信したコマンド値
   ///
   /// コマンドと動作の対応:
-  /// - [cmdDoubleTab] (0x01) : 録音中なら停止・文字起こし、停止中なら録音開始
-  /// - [cmdTripleTab] (0x02) : フラッシュSOSパターン点滅
+  /// - [cmdDoubleTab] (0x04) : 録音中なら停止・文字起こし、停止中なら録音開始
+  /// - [cmdTripleTab] (0x03) : フラッシュSOSパターン点滅
   /// - 不明なコマンド : 無視する
   ///
-  /// 注: [cmdLongPress] (0x04) はエスケープタイマーとして使用するが、
+  /// 注: [cmdLongPress] (0x01) はエスケープタイマーとして使用するが、
   /// このメソッドでは処理しない。呼び出し側が [startEscapeTimer] を直接呼ぶこと。
   Future<void> handleCommand(int command) async {
     switch (command) {

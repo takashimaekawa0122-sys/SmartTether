@@ -101,10 +101,11 @@ class FlashController {
       }
     } catch (e) {
       // SOSパターン実行中のエラーは途中で終了させる
-      // フラッシュが残ったままにならないよう、必ずOFFにする
-      await turnOff();
       // ignore: avoid_print
       print('[FlashController] SOSパターン実行中にエラー: $e');
+    } finally {
+      // キャンセル・例外・正常終了いずれの場合もフラッシュをOFFにする
+      await turnOff();
     }
   }
 }

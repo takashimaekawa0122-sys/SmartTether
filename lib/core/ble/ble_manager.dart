@@ -185,13 +185,30 @@ class BleManager {
   }
 
   /// リソースを解放する
+  ///
+  /// [M-2] Riverpod の ref.onDispose は同期コールバックのため、
+  /// このメソッドは void のままにしている。
+  /// cancel() は非同期だが、その Future を scheduleMicrotask に渡すことで
+  /// 「cancel の完了を待ってから close する」順序を保証する。
+  /// unawaited() を使わず明示的に then() で close を連鎖させることで、
+  /// cancel のコールバック内で closed stream にアクセスするエラーを防ぐ。
   void dispose() {
     _disposed = true;
     _retryTimer?.cancel();
     _rssiTimer?.cancel();
-    _connectionSubscription?.cancel();
-    _connectionStateController.close();
-    _rssiController.close();
+    // cancel() の完了後に close する。cancel() が null の場合は即 close。
+    final cancelFuture = _connectionSubscription?.cancel();
+    _connectionSubscription = null;
+    if (cancelFuture != null) {
+      // cancel 完了を待ってから Stream を閉じる（非同期順序保証）
+      cancelFuture.whenComplete(() {
+        _connectionStateController.close();
+        _rssiController.close();
+      });
+    } else {
+      _connectionStateController.close();
+      _rssiController.close();
+    }
   }
 
   // ----------------------------------------------------------------
@@ -205,7 +222,20 @@ class BleManager {
     try {
       await _connectionSubscription?.cancel();
 
-      final completer = Completer<BleResult<void>>();
+      // [H-3] completer を null 化することで、disconnected と onError が
+      // 同時に来た場合の二重 complete を防ぐ。
+      // null チェック後に即 null にセットし、残方が何も呼べない状態にする。
+      Completer<BleResult<void>>? completer = Completer<BleResult<void>>();
+
+      /// completer を1度だけ complete して即 null 化するヘルパー。
+      /// 二重 complete を構造的に防ぐ。
+      void safeComplete(BleResult<void> result) {
+        final c = completer;
+        if (c != null && !c.isCompleted) {
+          completer = null;
+          c.complete(result);
+        }
+      }
 
       _connectionSubscription = _ble
           .connectToDevice(
@@ -246,9 +276,7 @@ class BleManager {
                     // ignore: avoid_print
                     print('[BleManager] 認証失敗: ${authResult.error}');
                     _updateState(BleConnectionState.error);
-                    if (!completer.isCompleted) {
-                      completer.complete(BleFailure('認証失敗: ${authResult.error}'));
-                    }
+                    safeComplete(BleFailure('認証失敗: ${authResult.error}'));
                     return;
                   }
 
@@ -259,16 +287,16 @@ class BleManager {
                   // ignore: avoid_print
                   print('[BleManager] V2認証完了・RSSI監視開始');
 
-                  if (!completer.isCompleted) completer.complete(const BleSuccess(null));
+                  safeComplete(const BleSuccess(null));
 
                 case DeviceConnectionState.disconnected:
                   // 認証中の切断イベントは認証完了後に処理されるため無視する
                   if (_isAuthenticating) break;
                   _rssiTimer?.cancel();
                   _rssiSmoother.reset();
-                  if (!completer.isCompleted) {
-                    completer.complete(
-                        const BleFailure('接続が切断されました'));
+                  if (completer != null) {
+                    // completer がまだ生きている = 初回接続が完了していない
+                    safeComplete(const BleFailure('接続が切断されました'));
                   } else {
                     // 接続済み状態での切断 → 再接続
                     _updateState(BleConnectionState.disconnected);
@@ -281,14 +309,16 @@ class BleManager {
               }
             },
             onError: (Object e) {
+              // [H-3] _disposed チェックを追加。
+              // _connectionSubscription?.cancel() が onError を発火させた場合に
+              // dispose 後の処理を防ぐ。
+              if (_disposed) return;
               _updateState(BleConnectionState.error);
-              if (!completer.isCompleted) {
-                completer.complete(BleFailure('BLE接続エラー: $e'));
-              }
+              safeComplete(BleFailure('BLE接続エラー: $e'));
             },
           );
 
-      return await completer.future;
+      return await completer!.future;
     } catch (e) {
       _updateState(BleConnectionState.error);
       return BleFailure('接続開始エラー: $e');

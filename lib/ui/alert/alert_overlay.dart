@@ -109,44 +109,33 @@ class _AlertOverlayControllerState
     final tetherStateAsync = ref.watch(tetherStateStreamProvider);
     final tetherState = tetherStateAsync.valueOrNull;
 
-    // 状態が警告圏外になったらユーザー解除フラグをリセットして再表示を許可する
-    if (tetherState != null && !tetherState.isAlerting) {
-      if (_dismissedByUser || _lastState?.isAlerting == true) {
-        // 警告圏から安全圏に戻った → 解除フラグをクリア
-        if (_dismissedByUser) {
-          // 次フレームで setState を呼ぶ（build中は不可）
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              setState(() {
-                _dismissedByUser = false;
-              });
-            }
-          });
-        }
-        // アラート音も確実に停止（build()内での副作用を避けるためpostFrameCallbackで呼ぶ）
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _stopAlert();
-        });
-      }
-    }
-
     // 警告圏に入ったとき（かつユーザーがまだ解除していないとき）にアラートを開始する
     final shouldShow =
         tetherState != null && tetherState.isAlerting && !_dismissedByUser;
 
-    // 警告圏に入った瞬間にアラートを起動
-    if (tetherState != null && tetherState != _lastState) {
-      if (tetherState.isAlerting && !_dismissedByUser) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _startAlert();
-        });
-      } else if (_lastState?.isAlerting == true && !tetherState.isAlerting) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _stopAlert();
-        });
-      }
+    // 状態が変化したときのみ副作用を実行する（毎ビルドで積まれないよう条件を絞る）
+    if (tetherState != _lastState) {
+      final previousState = _lastState;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        // build() の外で _lastState を更新する
+        _lastState = tetherState;
+
+        if (tetherState != null && tetherState.isAlerting && !_dismissedByUser) {
+          // 警告圏に入った瞬間にアラートを起動
+          _startAlert();
+        } else if (previousState?.isAlerting == true &&
+            (tetherState == null || !tetherState.isAlerting)) {
+          // 警告圏から安全圏に戻った → アラート停止 + 解除フラグをリセット
+          _stopAlert();
+          if (_dismissedByUser) {
+            setState(() {
+              _dismissedByUser = false;
+            });
+          }
+        }
+      });
     }
-    _lastState = tetherState;
 
     if (!shouldShow) return const SizedBox.shrink();
 

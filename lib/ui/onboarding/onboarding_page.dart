@@ -35,8 +35,16 @@ class _OnboardingPageState extends State<OnboardingPage> {
     if (!mounted) return;
     setState(() {
       // MACアドレスの末尾8文字（例: 23:38:E3）
-      if (mac != null && mac.length >= 8) {
+      // プレースホルダー値（未設定）の場合は '未設定' を表示する
+      final isPlaceholder = mac == null ||
+          mac.isEmpty ||
+          mac == 'XX:XX:XX:XX:XX:XX';
+      if (isPlaceholder) {
+        _macSuffix = '未設定';
+      } else if (mac.length >= 8) {
         _macSuffix = mac.substring(mac.length - 8);
+      } else {
+        _macSuffix = mac;
       }
       _hasAuthKey = authKey != null;
     });
@@ -230,11 +238,17 @@ class _StepBandInfo extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      macSuffix != null ? '...$macSuffix' : '読み込み中...',
-                      style: const TextStyle(
-                        color: Colors.white,
+                      macSuffix == null
+                          ? '読み込み中...'
+                          : macSuffix == '未設定'
+                              ? '未設定'
+                              : '...$macSuffix',
+                      style: TextStyle(
+                        color: macSuffix == '未設定'
+                            ? const Color(0xFFFF9F43)
+                            : Colors.white,
                         fontSize: 14,
-                        fontFamily: 'monospace',
+                        fontFamily: 'monospace', // ignore: avoid_hardcoded_font_family
                       ),
                     ),
                   ],

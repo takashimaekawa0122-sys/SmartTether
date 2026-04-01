@@ -1,7 +1,7 @@
 /// アラート音の再生を管理するクラス
 ///
-/// assets/sounds/alert.mp3 が存在すれば just_audio でループ再生する。
-/// MP3 が存在しない場合は SystemSound（iOS: 1005 アラート音）を使い、
+/// assets/sounds/alert.wav が存在すれば just_audio でループ再生する。
+/// WAV が存在しない場合は SystemSound（iOS: 1005 アラート音）を使い、
 /// それも失敗した場合は HapticFeedback による繰り返し振動にフォールバックする。
 /// バックグラウンドでも動作するよう、ハードウェア操作はすべてtry-catchで保護する。
 library;
@@ -36,7 +36,7 @@ class AlertSoundPlayer {
   /// アラート音のループ再生を開始する
   ///
   /// 優先順位:
-  ///   1. assets/sounds/alert.mp3 をループ再生（just_audio）
+  ///   1. assets/sounds/alert.wav をループ再生（just_audio）
   ///   2. SystemSound.play(1005)（iOSアラート音）を繰り返し再生
   ///   3. HapticFeedback.heavyImpact() を繰り返し（最終フォールバック）
   ///
@@ -48,7 +48,7 @@ class AlertSoundPlayer {
 
     try {
       // アセットを読み込んでループモードを設定
-      await _player.setAsset('assets/sounds/alert.mp3');
+      await _player.setAsset('assets/sounds/alert.wav');
       await _player.setLoopMode(LoopMode.one);
       await _player.play();
     } catch (e) {

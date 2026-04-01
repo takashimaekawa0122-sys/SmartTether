@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -31,6 +32,9 @@ class AdaptiveThresholdLearner {
   /// 現在計算済みの閾値（キャッシュ）
   double _threshold = _kDefaultThreshold;
 
+  /// 未初期化フラグ（initialize()完了前にthresholdが参照された場合の防衛用）
+  bool _initialized = false;
+
   /// SharedPreferencesから保存済みのサンプルを読み込む
   ///
   /// アプリ起動時に一度呼ぶ。
@@ -53,6 +57,8 @@ class AdaptiveThresholdLearner {
       // 読み込みエラーはデフォルト値のまま継続（ログのみ記録）
       // ignore: avoid_print
       print('[AdaptiveThresholdLearner] initialize error: $e');
+    } finally {
+      _initialized = true;
     }
   }
 
@@ -60,7 +66,11 @@ class AdaptiveThresholdLearner {
   ///
   /// [rssi]: flutter_reactive_bleが返す生RSSI（dBm）。
   /// RSSISmoother通過後の平滑値を渡すことを推奨。
-  void addConnectedSample(double rssi) {
+  Future<void> addConnectedSample(double rssi) async {
+    // 未初期化の場合は保存済みデータを読み込んでから追記する
+    if (!_initialized) {
+      await initialize();
+    }
     _samples.add(rssi);
 
     // 上限を超えた分は先頭（古いサンプル）から削除する
@@ -144,6 +154,10 @@ class AdaptiveThresholdLearner {
 /// Riverpodプロバイダー
 ///
 /// アプリ全体で単一インスタンスを共有する。
-/// initialize()の呼び出しはアプリ起動シーケンスで行うこと。
-final adaptiveThresholdProvider =
-    Provider<AdaptiveThresholdLearner>((ref) => AdaptiveThresholdLearner());
+/// プロバイダー生成時に initialize() を非同期で開始する。
+/// 初期化完了前に addConnectedSample() が呼ばれた場合は内部で待機する。
+final adaptiveThresholdProvider = Provider<AdaptiveThresholdLearner>((ref) {
+  final learner = AdaptiveThresholdLearner();
+  unawaited(learner.initialize());
+  return learner;
+});

@@ -161,9 +161,9 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
   @override
   Widget build(BuildContext context) {
     // BLE接続完了と同時にステルストリガー監視を起動する。
-    // stealthTriggerProvider は内部で bleConnectionStateProvider を listen して
-    // 自動的に開始・停止するため、ref.watch するだけで十分。
     ref.watch(stealthTriggerProvider);
+    // バックグラウンドIsolateからのタイムラインイベントをUI側で受信する
+    ref.watch(backgroundTimelineListenerProvider);
 
     final tetherStateAsync = ref.watch(tetherStateStreamProvider);
     final tetherState = tetherStateAsync.valueOrNull;

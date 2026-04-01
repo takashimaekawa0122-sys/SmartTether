@@ -8,6 +8,7 @@ import '../security/app_secrets.dart';
 import 'band_authenticator.dart';
 import 'band_protocol.dart';
 import 'rssi_smoother.dart';
+import 'sppv2_packet.dart';
 
 /// BLE接続状態
 enum BleConnectionState {
@@ -139,14 +140,21 @@ class BleManager {
 
       // 振動パターンをバイト列に変換
       // フォーマット: [0x08, repeatCount, ...pattern(2byte each: ON_ms/100, OFF_ms/100)]
-      final payload = <int>[0x08, pattern.repeat];
+      final commandData = <int>[0x08, pattern.repeat];
       for (var i = 0; i < pattern.pattern.length; i++) {
-        payload.add((pattern.pattern[i] / 100).round().clamp(1, 255));
+        commandData.add((pattern.pattern[i] / 100).round().clamp(1, 255));
       }
+
+      // SPPv2パケットでラップして送信（Band 9は生バイト列を無視する）
+      final packet = Sppv2Packet.buildCommand(
+        channelId: Sppv2Channel.command,
+        payloadType: Sppv2PayloadType.plaintext,
+        data: commandData,
+      );
 
       await _ble.writeCharacteristicWithoutResponse(
         characteristic,
-        value: payload,
+        value: packet,
       );
       return const BleSuccess(null);
     } catch (e) {

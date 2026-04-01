@@ -67,7 +67,6 @@ void onStart(ServiceInstance service) async {
   final safeZoneDetector = SafeZoneDetector();
   final thresholdLearner = AdaptiveThresholdLearner();
   final rssiSmoother = RSSISmoother();
-  final timelineLogger = TimelineLogger();
 
   // ---- 段階遷移のための状態変数 ----
   TetherState previousState = TetherState.monitoring;
@@ -77,23 +76,18 @@ void onStart(ServiceInstance service) async {
     // SharedPreferences から保存済みの設定を読み込む
     await safeZoneDetector.initialize();
     await thresholdLearner.initialize();
-    await timelineLogger.load();
   } catch (e) {
     // 初期化失敗時はデフォルト値のまま動作継続する（バックグラウンドクラッシュ防止）
     // ignore: avoid_print
     print('[BackgroundService] 初期化エラー（デフォルト値で続行）: $e');
   }
 
-  // 起動ログをタイムラインに記録する
-  try {
-    await timelineLogger.log(
-      TimelineEventType.monitoringStarted,
-      'バックグラウンド監視を開始しました',
-    );
-  } catch (e) {
-    // ignore: avoid_print
-    print('[BackgroundService] タイムラインログエラー: $e');
-  }
+  // タイムラインイベントはIPC経由でUI側に送信する
+  // （バックグラウンドIsolateのTimelineLoggerはUI側と別インスタンスのため直接書き込まない）
+  service.invoke('timelineEvent', {
+    'type': 'monitoringStarted',
+    'message': 'バックグラウンド監視を開始しました',
+  });
 
   // ---- BleManager からの RSSI 受信リスナー ----
   // メインIsolateの BleManager が invoke('rssiUpdate') した値をここで受け取る
@@ -119,12 +113,10 @@ void onStart(ServiceInstance service) async {
     monitorTimer?.cancel();
     rssiSub?.cancel();
     stopSub?.cancel();
-    try {
-      await timelineLogger.log(
-        TimelineEventType.monitoringStopped,
-        'バックグラウンド監視を停止しました',
-      );
-    } catch (_) {}
+    service.invoke('timelineEvent', {
+      'type': 'monitoringStopped',
+      'message': 'バックグラウンド監視を停止しました',
+    });
     await service.stopSelf();
   });
 
@@ -141,7 +133,6 @@ void onStart(ServiceInstance service) async {
         safeZoneDetector: safeZoneDetector,
         thresholdLearner: thresholdLearner,
         rssiSmoother: rssiSmoother,
-        timelineLogger: timelineLogger,
         previousState: previousState,
         warningStartTime: warningStartTime,
       );
@@ -176,7 +167,6 @@ Future<_MonitoringCycleResult> _performMonitoringCycle({
   required SafeZoneDetector safeZoneDetector,
   required AdaptiveThresholdLearner thresholdLearner,
   required RSSISmoother rssiSmoother,
-  required TimelineLogger timelineLogger,
   required TetherState previousState,
   required DateTime? warningStartTime,
 }) async {
@@ -359,4 +349,24 @@ final tetherStateStreamProvider = StreamProvider<TetherState>((ref) {
           orElse: () => TetherState.sleeping,
         );
       });
+});
+
+/// バックグラウンドIsolateからのタイムラインイベントをUI側のTimelineLoggerに記録する
+///
+/// バックグラウンドIsolateはメモリ空間が分離されているため、
+/// IPC経由でイベントを受信してUI側のインスタンスで記録する。
+final backgroundTimelineListenerProvider = Provider<void>((ref) {
+  final logger = ref.watch(timelineLoggerProvider);
+  final sub = FlutterBackgroundService().on('timelineEvent').listen((data) {
+    final typeName = data?['type'] as String?;
+    final message = data?['message'] as String? ?? '';
+    if (typeName == null) return;
+
+    final eventType = TimelineEventType.values.firstWhere(
+      (e) => e.name == typeName,
+      orElse: () => TimelineEventType.monitoringStarted,
+    );
+    logger.log(eventType, message);
+  });
+  ref.onDispose(sub.cancel);
 });

@@ -157,6 +157,11 @@ class BandAuthenticator {
     bool sessionConfigDone = false;
     SessionKeys? pendingKeys;
 
+    // Gadgetbridge と同様の受信バッファ:
+    // BLE 通知は MTU サイズで分割されるため、バッファに蓄積して
+    // 完全なフレームが揃ったら解析する。
+    final rxBuffer = Sppv2ReceiveBuffer();
+
     // Step 0: 005e (RX) に Notify をサブスクライブしてから送信する
     subscription = _ble
         .subscribeToCharacteristic(rxChar)
@@ -164,119 +169,127 @@ class BandAuthenticator {
           (data) async {
             if (data.isEmpty || completer.isCompleted) return;
 
+            // ignore: avoid_print
+            print('[Auth] BLE受信 ${data.length}バイト raw=${data.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
+
+            // バッファに追加して完全なフレームを取り出す
+            final packets = rxBuffer.append(data);
+            if (packets.isEmpty) {
+              // ignore: avoid_print
+              print('[Auth] バッファリング中（フレーム未完成）');
+              return;
+            }
+
             try {
-              final packet = Sppv2Packet.parse(data);
-              if (packet == null) {
+              for (final packet in packets) {
+                if (completer.isCompleted) return;
+
                 // ignore: avoid_print
-                print('[Auth] パース失敗 raw=${data.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
-                return;
-              }
+                print('[Auth] 受信 frameType=0x${packet.frameType.toRadixString(16)} '
+                    'channel=0x${packet.channelId.toRadixString(16)} '
+                    'data len=${packet.data.length}');
 
-              // ignore: avoid_print
-              print('[Auth] 受信 frameType=0x${packet.frameType.toRadixString(16)} '
-                  'channel=0x${packet.channelId.toRadixString(16)} '
-                  'data len=${packet.data.length}');
-
-              // --- SESSION_CONFIG レスポンス処理 ---
-              if (packet.frameType == Sppv2FrameType.sessionConfig &&
-                  !sessionConfigDone) {
-                // Bandからのセッション設定完了通知を受信
-                sessionConfigDone = true;
-                // ignore: avoid_print
-                print('[Auth] SESSION_CONFIG 受信 → CMD_NONCE を送信');
-
-                // Step 3: CMD_NONCE を送信
-                await _sendNonceCommand(
-                  txChar: txChar,
-                  phoneNonce: phoneNonce,
-                );
-                return;
-              }
-
-              // --- 認証チャンネルのレスポンス処理 ---
-              if (packet.channelId != Sppv2Channel.auth) return;
-
-              final rawData = packet.data;
-              if (rawData.isEmpty) return;
-
-              // Protobuf デコード: Command { type(1), subtype(2), auth(3) }
-              final parsed = _parseProtoCommand(rawData);
-              if (parsed == null) {
-                // ignore: avoid_print
-                print('[Auth] Protobufデコード失敗 raw=${rawData.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
-                return;
-              }
-
-              final type = parsed['type'] as int?;
-              final subType = parsed['subtype'] as int?;
-
-              // ignore: avoid_print
-              print('[Auth] CMD受信 type=$type subtype=$subType');
-
-              if (type != AuthCommands.authTypeV2) return;
-
-              if (subType == AuthCommands.cmdNonce && pendingKeys == null) {
-                // Step 4: watchNonce(16) + watchHmac(32) を受信
-                // Protobuf: Auth.watchNonce { nonce(1): bytes, hmac(2): bytes }
-                final watchNonce = parsed['watchNonce'] as Uint8List?;
-                final watchHmac = parsed['watchHmac'] as Uint8List?;
-
-                if (watchNonce == null || watchHmac == null) {
-                  completer.complete(
-                    const AuthFailure('CMD_NONCE応答: watchNonce/watchHmacが取得できません'),
-                  );
-                  return;
-                }
-                if (watchNonce.length != 16 || watchHmac.length != 32) {
-                  completer.complete(
-                    AuthFailure('CMD_NONCE応答のデータ長不正: nonce=${watchNonce.length} hmac=${watchHmac.length}'),
-                  );
-                  return;
-                }
-
-                // Step 5: セッション鍵を導出
-                final keys = _deriveSessionKeys(
-                  authKey: authKey,
-                  phoneNonce: phoneNonce,
-                  watchNonce: watchNonce,
-                );
-                pendingKeys = keys;
-
-                // watchHmac を検証
-                // expected = HMAC-SHA256(key=decryptionKey, msg=watchNonce+phoneNonce)
-                final expected = _hmacSha256(
-                  key: keys.decryptionKey,
-                  message: Uint8List.fromList([...watchNonce, ...phoneNonce]),
-                );
-
-                if (!_constantTimeEqual(expected, watchHmac)) {
-                  completer.complete(const AuthFailure(
-                    'watchHmac 検証失敗（Auth Keyが間違っている可能性があります）',
-                  ));
-                  return;
-                }
-
-                // Step 6: CMD_AUTH コマンドを送信
-                await _sendAuthCommand(
-                  txChar: txChar,
-                  encryptionKey: keys.encryptionKey,
-                  phoneNonce: phoneNonce,
-                  watchNonce: watchNonce,
-                );
-              } else if (subType == AuthCommands.cmdAuth &&
-                  pendingKeys != null) {
-                // Step 7: CMD_AUTH 応答 — 認証完了確認
-                // Gadgetbridge準拠: status == 0（成功）または status == 1（成功）の両方を受け入れる
-                // ファームウェアバージョンによって返す値が異なる可能性があるため。
-                final status = parsed['status'] as int? ?? -1;
-                if (status == 0 || status == 1) {
+                // --- SESSION_CONFIG レスポンス処理 ---
+                if (packet.frameType == Sppv2FrameType.sessionConfig &&
+                    !sessionConfigDone) {
+                  // Bandからのセッション設定完了通知を受信
+                  sessionConfigDone = true;
                   // ignore: avoid_print
-                  print('[Auth] CMD_AUTH 成功 (status=$status)');
-                  completer.complete(AuthSuccess(pendingKeys!));
-                } else {
-                  completer.complete(
-                    AuthFailure('CMD_AUTH 認証失敗（status: $status）'),
+                  print('[Auth] SESSION_CONFIG 受信 → CMD_NONCE を送信');
+
+                  // Step 3: CMD_NONCE を送信
+                  await _sendNonceCommand(
+                    txChar: txChar,
+                    phoneNonce: phoneNonce,
                   );
+                  return;
+                }
+
+                // --- 認証チャンネルのレスポンス処理 ---
+                if (packet.channelId != Sppv2Channel.auth) continue;
+
+                final rawData = packet.data;
+                if (rawData.isEmpty) continue;
+
+                // Protobuf デコード: Command { type(1), subtype(2), auth(3) }
+                final parsed = _parseProtoCommand(rawData);
+                if (parsed == null) {
+                  // ignore: avoid_print
+                  print('[Auth] Protobufデコード失敗 raw=${rawData.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
+                  continue;
+                }
+
+                final type = parsed['type'] as int?;
+                final subType = parsed['subtype'] as int?;
+
+                // ignore: avoid_print
+                print('[Auth] CMD受信 type=$type subtype=$subType');
+
+                if (type != AuthCommands.authTypeV2) continue;
+
+                if (subType == AuthCommands.cmdNonce && pendingKeys == null) {
+                  // Step 4: watchNonce(16) + watchHmac(32) を受信
+                  // Protobuf: Auth.watchNonce { nonce(1): bytes, hmac(2): bytes }
+                  final watchNonce = parsed['watchNonce'] as Uint8List?;
+                  final watchHmac = parsed['watchHmac'] as Uint8List?;
+
+                  if (watchNonce == null || watchHmac == null) {
+                    completer.complete(
+                      const AuthFailure('CMD_NONCE応答: watchNonce/watchHmacが取得できません'),
+                    );
+                    return;
+                  }
+                  if (watchNonce.length != 16 || watchHmac.length != 32) {
+                    completer.complete(
+                      AuthFailure('CMD_NONCE応答のデータ長不正: nonce=${watchNonce.length} hmac=${watchHmac.length}'),
+                    );
+                    return;
+                  }
+
+                  // Step 5: セッション鍵を導出
+                  final keys = _deriveSessionKeys(
+                    authKey: authKey,
+                    phoneNonce: phoneNonce,
+                    watchNonce: watchNonce,
+                  );
+                  pendingKeys = keys;
+
+                  // watchHmac を検証
+                  // expected = HMAC-SHA256(key=decryptionKey, msg=watchNonce+phoneNonce)
+                  final expected = _hmacSha256(
+                    key: keys.decryptionKey,
+                    message: Uint8List.fromList([...watchNonce, ...phoneNonce]),
+                  );
+
+                  if (!_constantTimeEqual(expected, watchHmac)) {
+                    completer.complete(const AuthFailure(
+                      'watchHmac 検証失敗（Auth Keyが間違っている可能性があります）',
+                    ));
+                    return;
+                  }
+
+                  // Step 6: CMD_AUTH コマンドを送信
+                  await _sendAuthCommand(
+                    txChar: txChar,
+                    encryptionKey: keys.encryptionKey,
+                    phoneNonce: phoneNonce,
+                    watchNonce: watchNonce,
+                  );
+                } else if (subType == AuthCommands.cmdAuth &&
+                    pendingKeys != null) {
+                  // Step 7: CMD_AUTH 応答 — 認証完了確認
+                  // Gadgetbridge準拠: status == 0（成功）または status == 1（成功）の両方を受け入れる
+                  // ファームウェアバージョンによって返す値が異なる可能性があるため。
+                  final status = parsed['status'] as int? ?? -1;
+                  if (status == 0 || status == 1) {
+                    // ignore: avoid_print
+                    print('[Auth] CMD_AUTH 成功 (status=$status)');
+                    completer.complete(AuthSuccess(pendingKeys!));
+                  } else {
+                    completer.complete(
+                      AuthFailure('CMD_AUTH 認証失敗（status: $status）'),
+                    );
+                  }
                 }
               }
             } catch (e) {
@@ -294,8 +307,13 @@ class BandAuthenticator {
 
     try {
       // Step 1: SESSION_CONFIG リクエストを送信する
-      // subscribe完了後に送信するため、わずかに待機してBLE通知登録を確実にする
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      //
+      // subscribe 後に CCCD (Client Characteristic Configuration Descriptor)
+      // への write が完了するまで待機する必要がある。
+      // iOS では CCCD write に時間がかかるケースが報告されている。
+      // 200ms では不十分な場合があるため、500ms に延長する。
+      // 参考: https://github.com/PhilipsHue/flutter_reactive_ble/issues/526
+      await Future<void>.delayed(const Duration(milliseconds: 500));
       await _sendSessionConfigRequest(txChar: txChar);
       // ignore: avoid_print
       print('[Auth] SESSION_CONFIG 送信完了 → Bandの応答を待機中...');

@@ -238,6 +238,82 @@ class Sppv2Packet {
   }
 }
 
+/// SPPv2 受信バッファ
+///
+/// BLE 通知は MTU サイズに分割されて届くため、
+/// Gadgetbridge の processBuffer() と同様に受信データを蓄積し、
+/// 完全なフレームが揃ったら解析する。
+///
+/// 使い方:
+///   final buffer = Sppv2ReceiveBuffer();
+///   subscription = ble.subscribeToCharacteristic(rxChar).listen((data) {
+///     for (final packet in buffer.append(data)) {
+///       // packet は完全に解析済みの Sppv2ParsedPacket
+///     }
+///   });
+class Sppv2ReceiveBuffer {
+  final _buffer = <int>[];
+
+  /// 受信データをバッファに追加し、完全なフレームがあれば解析して返す
+  ///
+  /// 1回の BLE 通知に複数フレームが含まれる場合や、
+  /// フレームが複数の通知に跨がる場合の両方を正しく処理する。
+  List<Sppv2ParsedPacket> append(List<int> data) {
+    _buffer.addAll(data);
+    final results = <Sppv2ParsedPacket>[];
+
+    while (_buffer.length >= Sppv2Packet._headerLength + 2) {
+      // マジックバイトを探す
+      final preambleIndex = _findPreamble();
+      if (preambleIndex < 0) {
+        // マジックバイトが見つからない → バッファを全て破棄
+        _buffer.clear();
+        break;
+      }
+      if (preambleIndex > 0) {
+        // マジックバイト前のゴミデータを破棄
+        _buffer.removeRange(0, preambleIndex);
+      }
+
+      // ヘッダーが揃っているか確認（8バイト: magic 2 + type 1 + seq 1 + len 2 + CRC 2）
+      if (_buffer.length < Sppv2Packet._headerLength + 2) break;
+
+      final payloadLength = _buffer[4] | (_buffer[5] << 8);
+      final totalExpected = Sppv2Packet._headerLength + 2 + payloadLength;
+
+      // フレーム全体が揃っていない → 次の通知を待つ
+      if (_buffer.length < totalExpected) break;
+
+      // フレームをパースする
+      final frameBytes = _buffer.sublist(0, totalExpected);
+      final packet = Sppv2Packet.parse(frameBytes);
+
+      if (packet != null) {
+        results.add(packet);
+        _buffer.removeRange(0, totalExpected);
+      } else {
+        // パース失敗（CRC不一致など） → マジックバイトをスキップして次を探す
+        _buffer.removeRange(0, 2);
+      }
+    }
+
+    return results;
+  }
+
+  /// バッファをリセットする
+  void reset() {
+    _buffer.clear();
+  }
+
+  /// バッファ内でマジックバイト (0xa5, 0xa5) の位置を探す
+  int _findPreamble() {
+    for (var i = 0; i <= _buffer.length - 2; i++) {
+      if (_buffer[i] == 0xa5 && _buffer[i + 1] == 0xa5) return i;
+    }
+    return -1;
+  }
+}
+
 /// 解析済みSPPv2パケットを表すデータクラス
 class Sppv2ParsedPacket {
   final int frameType;

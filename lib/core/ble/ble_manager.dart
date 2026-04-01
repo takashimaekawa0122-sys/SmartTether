@@ -229,35 +229,11 @@ class BleManager {
                   }
 
                   // BLE Bondingをトリガーする（Gadgetbridge: createBond() 相当）
-                  //
-                  // iOSにはプログラムからbondingを開始するAPIがないため、
-                  // 暗号化が要求されるキャラクタリスティック（fdab/0002）を
-                  // readすることでiOSのペアリングダイアログをトリガーする。
-                  // 既にbond済みの場合はエラーなく読み取りが完了する。
                   await _triggerBonding(deviceId);
 
-                  // サービスディスカバリの結果を確認する
-                  // flutter_reactive_ble は connectToDevice 後に自動でサービスディスカバリを行う。
-                  // getDiscoveredServicesで結果をログ出力し、005e/005fが存在するか確認する。
-                  try {
-                    final services = await _ble.getDiscoveredServices(deviceId);
-                    // ignore: avoid_print
-                    print('[BleManager] サービスディスカバリ完了: ${services.length}サービス検出');
-                    for (final service in services) {
-                      // ignore: avoid_print
-                      print('[BleManager]   サービス: ${service.id}');
-                      for (final char in service.characteristics) {
-                        // ignore: avoid_print
-                        print('[BleManager]     char: ${char.id} '
-                            '(notify=${char.isNotifiable}, writeNoResp=${char.isWritableWithoutResponse})');
-                      }
-                    }
-                  } catch (e) {
-                    // ignore: avoid_print
-                    print('[BleManager] サービスディスカバリ失敗: $e');
-                  }
-
                   // V2プロトコル（HMAC-SHA256 + AES-CCM）で認証を実行する
+                  // 認証内部でgetDiscoveredServices()からCharacteristicオブジェクトを
+                  // 取得して使用する（UUID解決の問題を回避）
                   final authResult =
                       await _authenticator.authenticateV2(deviceId, authKey);
 

@@ -91,7 +91,7 @@ class BandAuthenticator {
   ///
   /// [deviceId]  : 接続済みデバイスのID（MACアドレス）
   /// [authKeyHex]: 32文字のHEX文字列（16バイト）
-  /// タイムアウトは10秒。
+  /// タイムアウトは30秒。
   Future<AuthResult> authenticateV2(String deviceId, String authKeyHex) async {
     try {
       return await _doAuthenticate(deviceId, authKeyHex)
@@ -106,17 +106,20 @@ class BandAuthenticator {
 
   /// 認証フローの本体
   ///
-  /// Gadgetbridge の XiaomiBleProtocolV2 に準拠した正しいフロー:
+  /// 重要: QualifiedCharacteristic ではなく、getDiscoveredServices() から取得した
+  /// 実際の Characteristic オブジェクトを直接使用する。
+  /// これにより、flutter_reactive_ble の内部UUID解決やinstanceIDマッチングの
+  /// 問題を回避し、iOS CoreBluetoothとの確実な通信を保証する。
+  ///
+  /// Gadgetbridge の XiaomiBleProtocolV2 に準拠したフロー:
   ///   Step 0: 005e に Notify をサブスクライブ
-  ///   Step 1: SESSION_CONFIG リクエストを送信（frameType=0x02, opcode=0x01）
-  ///   Step 2: Band から SESSION_CONFIG レスポンスを受信（frameType=0x02, opcode=0x02）
+  ///   Step 1: SESSION_CONFIG リクエストを送信
+  ///   Step 2: Band から SESSION_CONFIG レスポンスを受信
   ///   Step 3: CMD_NONCE を送信（phoneNonce 16バイト）
   ///   Step 4: Band から watchNonce(16) + watchHmac(32) を受信
   ///   Step 5: HMAC-SHA256 + KDF でセッション鍵を導出し watchHmac を検証
   ///   Step 6: CMD_AUTH を送信（phoneHmac 32バイト）
   ///   Step 7: Band から認証完了レスポンスを受信
-  ///
-  /// 注意: SESSION_CONFIG ハンドシェイクなしに CMD_NONCE を送っても Band は無視する。
   Future<AuthResult> _doAuthenticate(
       String deviceId, String authKeyHex) async {
     final authKey = _hexToBytes(authKeyHex);
@@ -124,17 +127,56 @@ class BandAuthenticator {
       return const AuthFailure('Auth Keyの形式が不正です（32文字HEX文字列が必要）');
     }
 
-    // 005e = RX（受信：subscribe用）、005f = TX（送信：write用）
-    final rxChar = QualifiedCharacteristic(
-      serviceId: Uuid.parse(BandServiceUUIDs.main),
-      characteristicId: Uuid.parse(BandCharacteristicUUIDs.rxChannel),
-      deviceId: deviceId,
-    );
-    final txChar = QualifiedCharacteristic(
-      serviceId: Uuid.parse(BandServiceUUIDs.main),
-      characteristicId: Uuid.parse(BandCharacteristicUUIDs.txChannel),
-      deviceId: deviceId,
-    );
+    // --- getDiscoveredServices から実際の Characteristic オブジェクトを取得 ---
+    // QualifiedCharacteristic（ハードコードUUID）の代わりに、
+    // iOSが実際に発見したCharacteristicオブジェクトを直接使用する。
+    // これにより instanceID のマッチング問題やサイレント失敗を回避する。
+    Characteristic? rxCharObj;
+    Characteristic? txCharObj;
+    try {
+      final services = await _ble.getDiscoveredServices(deviceId);
+      // ignore: avoid_print
+      print('[Auth] サービスディスカバリ: ${services.length}サービス検出');
+
+      final fe95Uuid = Uuid.parse(BandServiceUUIDs.main);
+      final rxUuid = Uuid.parse(BandCharacteristicUUIDs.rxChannel);
+      final txUuid = Uuid.parse(BandCharacteristicUUIDs.txChannel);
+
+      for (final service in services) {
+        if (service.id == fe95Uuid) {
+          // ignore: avoid_print
+          print('[Auth] fe95サービス発見 (${service.characteristics.length}個のchar)');
+          for (final char in service.characteristics) {
+            // ignore: avoid_print
+            print('[Auth]   char: ${char.id} notify=${char.isNotifiable} '
+                'writeNoResp=${char.isWritableWithoutResponse} '
+                'writeResp=${char.isWritableWithResponse}');
+            if (char.id == rxUuid) rxCharObj = char;
+            if (char.id == txUuid) txCharObj = char;
+          }
+          break;
+        }
+      }
+    } catch (e) {
+      return AuthFailure('サービスディスカバリ失敗: $e');
+    }
+
+    if (rxCharObj == null || txCharObj == null) {
+      return AuthFailure(
+        'fe95サービスの005e/005fキャラクタリスティックが見つかりません '
+        '(rx=${rxCharObj != null}, tx=${txCharObj != null})',
+      );
+    }
+
+    // ignore: avoid_print
+    print('[Auth] 005e(RX): isNotifiable=${rxCharObj.isNotifiable}');
+    // ignore: avoid_print
+    print('[Auth] 005f(TX): writeNoResp=${txCharObj.isWritableWithoutResponse} '
+        'writeResp=${txCharObj.isWritableWithResponse}');
+
+    if (!rxCharObj.isNotifiable) {
+      return const AuthFailure('005e キャラクタリスティックが notify 非対応です');
+    }
 
     // phoneNonce (16バイト) を先に生成しておく
     final phoneNonce = _generateNonce(16);
@@ -145,11 +187,12 @@ class BandAuthenticator {
     bool sessionConfigDone = false;
     SessionKeys? pendingKeys;
 
-    // Step 0: 005e (RX) に Notify をサブスクライブしてから送信する
+    // Step 0: Characteristic.subscribe() で直接 Notify をサブスクライブ
+    // QualifiedCharacteristic 経由ではなく、実際のオブジェクトを使う
     // ignore: avoid_print
-    print('[Auth] 005e (RX) にsubscribe開始...');
-    subscription = _ble
-        .subscribeToCharacteristic(rxChar)
+    print('[Auth] 005e (RX) にsubscribe開始（Characteristicオブジェクト直接使用）...');
+    subscription = rxCharObj
+        .subscribe()
         .listen(
           (data) async {
             // ignore: avoid_print
@@ -172,16 +215,10 @@ class BandAuthenticator {
               // --- SESSION_CONFIG レスポンス処理 ---
               if (packet.frameType == Sppv2FrameType.sessionConfig &&
                   !sessionConfigDone) {
-                // Bandからのセッション設定完了通知を受信
                 sessionConfigDone = true;
                 // ignore: avoid_print
                 print('[Auth] SESSION_CONFIG 受信 → CMD_NONCE を送信');
-
-                // Step 3: CMD_NONCE を送信
-                await _sendNonceCommand(
-                  txChar: txChar,
-                  phoneNonce: phoneNonce,
-                );
+                await _sendNonceCommand(txChar: txCharObj!, phoneNonce: phoneNonce);
                 return;
               }
 
@@ -191,7 +228,6 @@ class BandAuthenticator {
               final rawData = packet.data;
               if (rawData.isEmpty) return;
 
-              // Protobuf デコード: Command { type(1), subtype(2), auth(3) }
               final parsed = _parseProtoCommand(rawData);
               if (parsed == null) {
                 // ignore: avoid_print
@@ -201,15 +237,12 @@ class BandAuthenticator {
 
               final type = parsed['type'] as int?;
               final subType = parsed['subtype'] as int?;
-
               // ignore: avoid_print
               print('[Auth] CMD受信 type=$type subtype=$subType');
 
               if (type != AuthCommands.authTypeV2) return;
 
               if (subType == AuthCommands.cmdNonce && pendingKeys == null) {
-                // Step 4: watchNonce(16) + watchHmac(32) を受信
-                // Protobuf: Auth.watchNonce { nonce(1): bytes, hmac(2): bytes }
                 final watchNonce = parsed['watchNonce'] as Uint8List?;
                 final watchHmac = parsed['watchHmac'] as Uint8List?;
 
@@ -226,7 +259,6 @@ class BandAuthenticator {
                   return;
                 }
 
-                // Step 5: セッション鍵を導出
                 final keys = _deriveSessionKeys(
                   authKey: authKey,
                   phoneNonce: phoneNonce,
@@ -234,8 +266,6 @@ class BandAuthenticator {
                 );
                 pendingKeys = keys;
 
-                // watchHmac を検証
-                // expected = HMAC-SHA256(key=decryptionKey, msg=watchNonce+phoneNonce)
                 final expected = _hmacSha256(
                   key: keys.decryptionKey,
                   message: Uint8List.fromList([...watchNonce, ...phoneNonce]),
@@ -248,17 +278,14 @@ class BandAuthenticator {
                   return;
                 }
 
-                // Step 6: CMD_AUTH コマンドを送信
                 await _sendAuthCommand(
-                  txChar: txChar,
+                  txChar: txCharObj!,
                   encryptionKey: keys.encryptionKey,
                   phoneNonce: phoneNonce,
                   watchNonce: watchNonce,
                 );
               } else if (subType == AuthCommands.cmdAuth &&
                   pendingKeys != null) {
-                // Step 7: CMD_AUTH 応答 — 認証完了確認
-                // Auth.status == 0 が成功
                 final status = parsed['status'] as int? ?? -1;
                 if (status == 0) {
                   completer.complete(AuthSuccess(pendingKeys!));
@@ -284,26 +311,25 @@ class BandAuthenticator {
         );
 
     // ignore: avoid_print
-    print('[Auth] 005e subscribe完了 → 500ms待機後にSESSION_CONFIG送信');
+    print('[Auth] 005e subscribe完了 → 1秒待機後にSESSION_CONFIG送信');
 
     try {
       // Step 1: SESSION_CONFIG リクエストを送信する
-      // subscribe後にCCCD書き込みが完了するまで十分待機する。
-      // 200msでは不十分なケースがあるため500msに延長。
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      await _sendSessionConfigRequest(txChar: txChar);
+      // subscribe後にCCCD書き込み（setNotifyValue）が完了するまで十分待機する。
+      // iOSではbonding中間処理を含むと時間がかかるため、1秒待機する。
+      await Future<void>.delayed(const Duration(seconds: 1));
+      await _sendSessionConfigRequest(txChar: txCharObj);
       // ignore: avoid_print
       print('[Auth] SESSION_CONFIG 送信完了 → Bandの応答を待機中...');
 
       // SESSION_CONFIG応答がない場合のフォールバック:
       // 5秒待ってもSESSION_CONFIG応答がなければ、直接CMD_NONCEを送信してみる。
-      // 一部のファームウェアバージョンではSESSION_CONFIGをスキップできる可能性がある。
       Future<void>.delayed(const Duration(seconds: 5), () async {
         if (!completer.isCompleted && !sessionConfigDone) {
           // ignore: avoid_print
           print('[Auth] SESSION_CONFIG応答なし（5秒経過）→ CMD_NONCEを直接送信');
           try {
-            await _sendNonceCommand(txChar: txChar, phoneNonce: phoneNonce);
+            await _sendNonceCommand(txChar: txCharObj!, phoneNonce: phoneNonce);
           } catch (e) {
             // ignore: avoid_print
             print('[Auth] CMD_NONCE直接送信失敗: $e');
@@ -323,52 +349,36 @@ class BandAuthenticator {
   // Step 1: SESSION_CONFIG リクエスト送信（認証前ハンドシェイク）
   // ----------------------------------------------------------------
 
-  /// SESSION_CONFIG リクエストを送信する
+  /// SESSION_CONFIG リクエストを送信する（Characteristic オブジェクト版）
   ///
   /// Gadgetbridge の initializeDevice() が行う最初のパケット送信。
-  /// このパケットへの応答を受信して初めて CMD_NONCE を送ることができる。
+  /// write(withResponse: true) で送達確認付きで送信する。
   Future<void> _sendSessionConfigRequest({
-    required QualifiedCharacteristic txChar,
+    required Characteristic txChar,
   }) async {
     final packet = Sppv2Packet.buildSessionConfig(sequence: 0);
-    await _ble.writeCharacteristicWithoutResponse(
-      txChar,
-      value: packet.toList(),
-    );
+    // ignore: avoid_print
+    print('[Auth] SESSION_CONFIG writeWithResponse送信中 (${packet.length}バイト)...');
+    await txChar.write(packet.toList(), withResponse: false);
+    // ignore: avoid_print
+    print('[Auth] SESSION_CONFIG write完了');
   }
 
   // ----------------------------------------------------------------
   // Step 3: CMD_NONCE コマンド送信
   // ----------------------------------------------------------------
 
-  /// CMD_NONCE コマンドを送信する
-  ///
-  /// Xiaomi Protobuf（xiaomi.proto）に従ったコマンド構造:
-  ///   Command {
-  ///     type: 1         (field 1, varint)
-  ///     subtype: 26     (field 2, varint = CMD_NONCE)
-  ///     auth {          (field 3, length-delimited)
-  ///       phoneNonce {  (field 30, length-delimited)
-  ///         nonce: [16バイト]  (field 1, bytes)
-  ///       }
-  ///     }
-  ///   }
+  /// CMD_NONCE コマンドを送信する（Characteristic オブジェクト版）
   Future<void> _sendNonceCommand({
-    required QualifiedCharacteristic txChar,
+    required Characteristic txChar,
     required Uint8List phoneNonce,
   }) async {
-    // Protobuf手動エンコード
-    // PhoneNonce { nonce(field=1, bytes): phoneNonce }
     final phoneNonceMsg = _protoBytes(field: 1, value: phoneNonce);
-
-    // Auth { phoneNonce(field=30, message): phoneNonceMsg }
     final authMsg = _protoMessage(field: 30, value: phoneNonceMsg);
-
-    // Command { type(field=1)=1, subtype(field=2)=26, auth(field=3): authMsg }
     final commandData = <int>[
-      ..._protoVarint(field: 1, value: 1),                  // type = 1
-      ..._protoVarint(field: 2, value: AuthCommands.cmdNonce), // subtype = 26
-      ..._protoMessage(field: 3, value: authMsg),            // auth
+      ..._protoVarint(field: 1, value: 1),
+      ..._protoVarint(field: 2, value: AuthCommands.cmdNonce),
+      ..._protoMessage(field: 3, value: authMsg),
     ];
 
     final packet = Sppv2Packet.buildCommand(
@@ -377,33 +387,16 @@ class BandAuthenticator {
       data: commandData,
     );
 
-    await _ble.writeCharacteristicWithoutResponse(
-      txChar,
-      value: packet.toList(),
-    );
+    await txChar.write(packet.toList(), withResponse: false);
   }
 
   // ----------------------------------------------------------------
   // Step 5: CMD_AUTH コマンド送信
   // ----------------------------------------------------------------
 
-  /// CMD_AUTH コマンドを送信する
-  ///
-  /// Xiaomi Protobuf（xiaomi.proto）に従ったコマンド構造:
-  ///   Command {
-  ///     type: 1         (field 1, varint)
-  ///     subtype: 27     (field 2, varint = CMD_AUTH)
-  ///     auth {          (field 3, length-delimited)
-  ///       authStep3 {   (field 32, length-delimited)
-  ///         encryptedNonces: phoneHmac(32バイト)  (field 1, bytes)
-  ///         encryptedDeviceInfo: [空]              (field 2, bytes)
-  ///       }
-  ///     }
-  ///   }
-  ///
-  /// phoneHmac = HMAC-SHA256(key=encryptionKey, msg=phoneNonce+watchNonce)
+  /// CMD_AUTH コマンドを送信する（Characteristic オブジェクト版）
   Future<void> _sendAuthCommand({
-    required QualifiedCharacteristic txChar,
+    required Characteristic txChar,
     required Uint8List encryptionKey,
     required Uint8List phoneNonce,
     required Uint8List watchNonce,
@@ -413,20 +406,15 @@ class BandAuthenticator {
       message: Uint8List.fromList([...phoneNonce, ...watchNonce]),
     );
 
-    // AuthStep3 { encryptedNonces(field=1): phoneHmac, encryptedDeviceInfo(field=2): [] }
     final authStep3Msg = <int>[
       ..._protoBytes(field: 1, value: phoneHmac),
       ..._protoBytes(field: 2, value: Uint8List(0)),
     ];
-
-    // Auth { authStep3(field=32, message): authStep3Msg }
     final authMsg = _protoMessage(field: 32, value: authStep3Msg);
-
-    // Command { type(field=1)=1, subtype(field=2)=27, auth(field=3): authMsg }
     final commandData = <int>[
-      ..._protoVarint(field: 1, value: 1),                  // type = 1
-      ..._protoVarint(field: 2, value: AuthCommands.cmdAuth), // subtype = 27
-      ..._protoMessage(field: 3, value: authMsg),            // auth
+      ..._protoVarint(field: 1, value: 1),
+      ..._protoVarint(field: 2, value: AuthCommands.cmdAuth),
+      ..._protoMessage(field: 3, value: authMsg),
     ];
 
     final packet = Sppv2Packet.buildCommand(
@@ -435,10 +423,7 @@ class BandAuthenticator {
       data: commandData,
     );
 
-    await _ble.writeCharacteristicWithoutResponse(
-      txChar,
-      value: packet.toList(),
-    );
+    await txChar.write(packet.toList(), withResponse: false);
   }
 
   // ----------------------------------------------------------------

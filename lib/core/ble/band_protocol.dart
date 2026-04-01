@@ -10,7 +10,7 @@
 ///   - 180a: Device Information Service（標準BLE）
 ///
 /// 注意: Band 9 の認証プロトコルは HMAC-SHA256 + AES-CCM（V2プロトコル）。
-///       現在は未実装のため認証なしでRSSI監視のみ動作する。
+///       band_authenticator.dart で実装済み。
 library;
 
 /// BLEサービスUUID
@@ -46,6 +46,13 @@ class BandCharacteristicUUIDs {
   /// Band 9 への認証コマンド・振動コマンドの送信に使用する。
   /// コマンドはすべてこのキャラクタリスティックに書き込む。
   static const String txChannel = '0000005f-0000-1000-8000-00805f9b34fb';
+
+  /// ペアリングサービス認証キャラクタリスティック (fdab / 0002)
+  ///
+  /// 暗号化が要求されるキャラクタリスティック。
+  /// iOSではこのキャラクタリスティックを read することで
+  /// システムレベルのBLE Bonding（ペアリングダイアログ）がトリガーされる。
+  static const String pairingAuth = '00000002-0000-1000-8000-00805f9b34fb';
 
   /// バッテリーレベル (180f / 2a19) — 標準 BLE Battery Level Characteristic
   static const String batteryLevel = '00002a19-0000-1000-8000-00805f9b34fb';

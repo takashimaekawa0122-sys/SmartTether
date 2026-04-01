@@ -228,6 +228,35 @@ class BleManager {
                     print('[BleManager] MTUリクエスト失敗（デフォルトで継続）: $e');
                   }
 
+                  // BLE Bondingをトリガーする（Gadgetbridge: createBond() 相当）
+                  //
+                  // iOSにはプログラムからbondingを開始するAPIがないため、
+                  // 暗号化が要求されるキャラクタリスティック（fdab/0002）を
+                  // readすることでiOSのペアリングダイアログをトリガーする。
+                  // 既にbond済みの場合はエラーなく読み取りが完了する。
+                  await _triggerBonding(deviceId);
+
+                  // サービスディスカバリの結果を確認する
+                  // flutter_reactive_ble は connectToDevice 後に自動でサービスディスカバリを行う。
+                  // getDiscoveredServicesで結果をログ出力し、005e/005fが存在するか確認する。
+                  try {
+                    final services = await _ble.getDiscoveredServices(deviceId);
+                    // ignore: avoid_print
+                    print('[BleManager] サービスディスカバリ完了: ${services.length}サービス検出');
+                    for (final service in services) {
+                      // ignore: avoid_print
+                      print('[BleManager]   サービス: ${service.id}');
+                      for (final char in service.characteristics) {
+                        // ignore: avoid_print
+                        print('[BleManager]     char: ${char.id} '
+                            '(notify=${char.isNotifiable}, writeNoResp=${char.isWritableWithoutResponse})');
+                      }
+                    }
+                  } catch (e) {
+                    // ignore: avoid_print
+                    print('[BleManager] サービスディスカバリ失敗: $e');
+                  }
+
                   // V2プロトコル（HMAC-SHA256 + AES-CCM）で認証を実行する
                   final authResult =
                       await _authenticator.authenticateV2(deviceId, authKey);
@@ -284,6 +313,40 @@ class BleManager {
     } catch (e) {
       _updateState(BleConnectionState.error);
       return BleFailure('接続開始エラー: $e');
+    }
+  }
+
+  /// BLE Bondingをトリガーする
+  ///
+  /// Gadgetbridgeでは `BluetoothDevice.createBond()` で明示的にbondingを行うが、
+  /// iOSにはその直接的なAPIがない。代わりに、暗号化が要求される
+  /// キャラクタリスティック（fdabサービスの0002）をreadすることで、
+  /// iOSが自動的にペアリングダイアログを表示してbondingを完了する。
+  ///
+  /// Bond済みの場合は何も起きずに正常に完了する。
+  /// fdabサービスが見つからない場合もエラーとせず続行する。
+  Future<void> _triggerBonding(String deviceId) async {
+    try {
+      final pairingChar = QualifiedCharacteristic(
+        serviceId: Uuid.parse(BandServiceUUIDs.pairing),
+        characteristicId: Uuid.parse(BandCharacteristicUUIDs.pairingAuth),
+        deviceId: deviceId,
+      );
+
+      // ignore: avoid_print
+      print('[BleManager] Bondingトリガー: fdab/0002 をread中...');
+      await _ble.readCharacteristic(pairingChar);
+      // ignore: avoid_print
+      print('[BleManager] Bondingトリガー完了（bond済みまたはペアリング成功）');
+
+      // bonding完了後、BLEスタックが安定するまで少し待つ
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    } catch (e) {
+      // fdabサービスが暗号化を要求しない場合や、
+      // サービスが見つからない場合はエラーになるが、
+      // fe95での認証に影響しない可能性もあるため続行する
+      // ignore: avoid_print
+      print('[BleManager] Bondingトリガー: $e（続行します）');
     }
   }
 

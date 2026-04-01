@@ -146,17 +146,21 @@ class BandAuthenticator {
     SessionKeys? pendingKeys;
 
     // Step 0: 005e (RX) に Notify をサブスクライブしてから送信する
+    // ignore: avoid_print
+    print('[Auth] 005e (RX) にsubscribe開始...');
     subscription = _ble
         .subscribeToCharacteristic(rxChar)
         .listen(
           (data) async {
+            // ignore: avoid_print
+            print('[Auth] BLE受信 ${data.length}バイト raw=${data.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
             if (data.isEmpty || completer.isCompleted) return;
 
             try {
               final packet = Sppv2Packet.parse(data);
               if (packet == null) {
                 // ignore: avoid_print
-                print('[Auth] パース失敗 raw=${data.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
+                print('[Auth] SPPv2パース失敗（rawデータは上記参照）');
                 return;
               }
 
@@ -271,19 +275,42 @@ class BandAuthenticator {
             }
           },
           onError: (Object e) {
+            // ignore: avoid_print
+            print('[Auth] BLE subscribe onError: $e');
             if (!completer.isCompleted) {
               completer.complete(AuthFailure('BLE受信エラー: $e'));
             }
           },
         );
 
+    // ignore: avoid_print
+    print('[Auth] 005e subscribe完了 → 500ms待機後にSESSION_CONFIG送信');
+
     try {
       // Step 1: SESSION_CONFIG リクエストを送信する
-      // subscribe完了後に送信するため、わずかに待機してBLE通知登録を確実にする
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      // subscribe後にCCCD書き込みが完了するまで十分待機する。
+      // 200msでは不十分なケースがあるため500msに延長。
+      await Future<void>.delayed(const Duration(milliseconds: 500));
       await _sendSessionConfigRequest(txChar: txChar);
       // ignore: avoid_print
       print('[Auth] SESSION_CONFIG 送信完了 → Bandの応答を待機中...');
+
+      // SESSION_CONFIG応答がない場合のフォールバック:
+      // 5秒待ってもSESSION_CONFIG応答がなければ、直接CMD_NONCEを送信してみる。
+      // 一部のファームウェアバージョンではSESSION_CONFIGをスキップできる可能性がある。
+      Future<void>.delayed(const Duration(seconds: 5), () async {
+        if (!completer.isCompleted && !sessionConfigDone) {
+          // ignore: avoid_print
+          print('[Auth] SESSION_CONFIG応答なし（5秒経過）→ CMD_NONCEを直接送信');
+          try {
+            await _sendNonceCommand(txChar: txChar, phoneNonce: phoneNonce);
+          } catch (e) {
+            // ignore: avoid_print
+            print('[Auth] CMD_NONCE直接送信失敗: $e');
+          }
+        }
+      });
+
       return await completer.future;
     } catch (e) {
       return AuthFailure('SESSION_CONFIG 送信エラー: $e');

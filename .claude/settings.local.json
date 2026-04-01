@@ -129,7 +129,8 @@
       "Bash(curl -sL \"https://codeberg.org/Freeyourgadget/Gadgetbridge/raw/branch/master/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiBleProtocolV2.java\")",
       "Bash(curl -sL https://codeberg.org/Freeyourgadget/Gadgetbridge/raw/branch/master/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiChannelHandler.java)",
       "Bash(curl -sL https://codeberg.org/Freeyourgadget/Gadgetbridge/raw/branch/master/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppPacketV2.java)",
-      "Bash(xargs wc:*)"
+"Bash(xargs wc:*)",
+      "Bash(ls test/core/sppv2*)"
     ]
   }
 }

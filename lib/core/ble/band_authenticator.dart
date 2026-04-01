@@ -85,19 +85,13 @@ class BandAuthenticator {
   final FlutterReactiveBle _ble;
   final _random = Random.secure();
 
-  /// SPPv2 パケットのシーケンス番号（0-255 で循環）
-  ///
-  /// 認証セッションごとに 0 にリセットし、パケット送信のたびにインクリメントする。
-  /// 同一セッション内での重複排除・リオーダー検知に使用される。
-  int _sequence = 0;
-
   BandAuthenticator(this._ble);
 
   /// Band 9 との V2認証を行い、SessionKeys を含む AuthResult を返す
   ///
   /// [deviceId]  : 接続済みデバイスのID（MACアドレス）
   /// [authKeyHex]: 32文字のHEX文字列（16バイト）
-  /// タイムアウトは10秒。
+  /// タイムアウトは30秒。
   Future<AuthResult> authenticateV2(String deviceId, String authKeyHex) async {
     try {
       return await _doAuthenticate(deviceId, authKeyHex)
@@ -112,41 +106,77 @@ class BandAuthenticator {
 
   /// 認証フローの本体
   ///
-  /// Gadgetbridge の XiaomiBleProtocolV2 に準拠した正しいフロー:
+  /// 重要: QualifiedCharacteristic ではなく、getDiscoveredServices() から取得した
+  /// 実際の Characteristic オブジェクトを直接使用する。
+  /// これにより、flutter_reactive_ble の内部UUID解決やinstanceIDマッチングの
+  /// 問題を回避し、iOS CoreBluetoothとの確実な通信を保証する。
+  ///
+  /// Gadgetbridge の XiaomiBleProtocolV2 に準拠したフロー:
   ///   Step 0: 005e に Notify をサブスクライブ
-  ///   Step 1: SESSION_CONFIG リクエストを送信（frameType=0x02, opcode=0x01）
-  ///   Step 2: Band から SESSION_CONFIG レスポンスを受信（frameType=0x02, opcode=0x02）
+  ///   Step 1: SESSION_CONFIG リクエストを送信
+  ///   Step 2: Band から SESSION_CONFIG レスポンスを受信
   ///   Step 3: CMD_NONCE を送信（phoneNonce 16バイト）
   ///   Step 4: Band から watchNonce(16) + watchHmac(32) を受信
   ///   Step 5: HMAC-SHA256 + KDF でセッション鍵を導出し watchHmac を検証
   ///   Step 6: CMD_AUTH を送信（phoneHmac 32バイト）
   ///   Step 7: Band から認証完了レスポンスを受信
-  ///
-  /// 注意: SESSION_CONFIG ハンドシェイクなしに CMD_NONCE を送っても Band は無視する。
   Future<AuthResult> _doAuthenticate(
       String deviceId, String authKeyHex) async {
-    _sequence = 0; // 認証セッション開始時にシーケンス番号をリセット
     final authKey = _hexToBytes(authKeyHex);
     if (authKey == null) {
       return const AuthFailure('Auth Keyの形式が不正です（32文字HEX文字列が必要）');
     }
-    if (authKey.length != 16) {
+
+    // --- getDiscoveredServices から実際の Characteristic オブジェクトを取得 ---
+    // QualifiedCharacteristic（ハードコードUUID）の代わりに、
+    // iOSが実際に発見したCharacteristicオブジェクトを直接使用する。
+    // これにより instanceID のマッチング問題やサイレント失敗を回避する。
+    Characteristic? rxCharObj;
+    Characteristic? txCharObj;
+    try {
+      final services = await _ble.getDiscoveredServices(deviceId);
+      // ignore: avoid_print
+      print('[Auth] サービスディスカバリ: ${services.length}サービス検出');
+
+      final fe95Uuid = Uuid.parse(BandServiceUUIDs.main);
+      final rxUuid = Uuid.parse(BandCharacteristicUUIDs.rxChannel);
+      final txUuid = Uuid.parse(BandCharacteristicUUIDs.txChannel);
+
+      for (final service in services) {
+        if (service.id == fe95Uuid) {
+          // ignore: avoid_print
+          print('[Auth] fe95サービス発見 (${service.characteristics.length}個のchar)');
+          for (final char in service.characteristics) {
+            // ignore: avoid_print
+            print('[Auth]   char: ${char.id} notify=${char.isNotifiable} '
+                'writeNoResp=${char.isWritableWithoutResponse} '
+                'writeResp=${char.isWritableWithResponse}');
+            if (char.id == rxUuid) rxCharObj = char;
+            if (char.id == txUuid) txCharObj = char;
+          }
+          break;
+        }
+      }
+    } catch (e) {
+      return AuthFailure('サービスディスカバリ失敗: $e');
+    }
+
+    if (rxCharObj == null || txCharObj == null) {
       return AuthFailure(
-        'Auth Keyのバイト長が不正です（16バイト必要、実際: ${authKey.length}バイト）',
+        'fe95サービスの005e/005fキャラクタリスティックが見つかりません '
+        '(rx=${rxCharObj != null}, tx=${txCharObj != null})',
       );
     }
 
-    // 005e = RX（受信：subscribe用）、005f = TX（送信：write用）
-    final rxChar = QualifiedCharacteristic(
-      serviceId: Uuid.parse(BandServiceUUIDs.main),
-      characteristicId: Uuid.parse(BandCharacteristicUUIDs.rxChannel),
-      deviceId: deviceId,
-    );
-    final txChar = QualifiedCharacteristic(
-      serviceId: Uuid.parse(BandServiceUUIDs.main),
-      characteristicId: Uuid.parse(BandCharacteristicUUIDs.txChannel),
-      deviceId: deviceId,
-    );
+    // ignore: avoid_print
+    print('[Auth] 005e(RX): isNotifiable=${rxCharObj.isNotifiable}');
+    // ignore: avoid_print
+    print('[Auth] 005f(TX): writeNoResp=${txCharObj.isWritableWithoutResponse} '
+        'writeResp=${txCharObj.isWritableWithResponse}');
+
+    if (!rxCharObj.isNotifiable) {
+      return const AuthFailure('005e キャラクタリスティックが notify 非対応です');
+    }
 
     // phoneNonce (16バイト) を先に生成しておく
     final phoneNonce = _generateNonce(16);
@@ -157,139 +187,112 @@ class BandAuthenticator {
     bool sessionConfigDone = false;
     SessionKeys? pendingKeys;
 
-    // Gadgetbridge と同様の受信バッファ:
-    // BLE 通知は MTU サイズで分割されるため、バッファに蓄積して
-    // 完全なフレームが揃ったら解析する。
-    final rxBuffer = Sppv2ReceiveBuffer();
-
-    // Step 0: 005e (RX) に Notify をサブスクライブしてから送信する
-    subscription = _ble
-        .subscribeToCharacteristic(rxChar)
+    // Step 0: Characteristic.subscribe() で直接 Notify をサブスクライブ
+    // QualifiedCharacteristic 経由ではなく、実際のオブジェクトを使う
+    // ignore: avoid_print
+    print('[Auth] 005e (RX) にsubscribe開始（Characteristicオブジェクト直接使用）...');
+    subscription = rxCharObj
+        .subscribe()
         .listen(
           (data) async {
-            if (data.isEmpty || completer.isCompleted) return;
-
             // ignore: avoid_print
             print('[Auth] BLE受信 ${data.length}バイト raw=${data.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
-
-            // バッファに追加して完全なフレームを取り出す
-            final packets = rxBuffer.append(data);
-            if (packets.isEmpty) {
-              // ignore: avoid_print
-              print('[Auth] バッファリング中（フレーム未完成）');
-              return;
-            }
+            if (data.isEmpty || completer.isCompleted) return;
 
             try {
-              for (final packet in packets) {
-                if (completer.isCompleted) return;
-
+              final packet = Sppv2Packet.parse(data);
+              if (packet == null) {
                 // ignore: avoid_print
-                print('[Auth] 受信 frameType=0x${packet.frameType.toRadixString(16)} '
-                    'channel=0x${packet.channelId.toRadixString(16)} '
-                    'data len=${packet.data.length}');
+                print('[Auth] SPPv2パース失敗（rawデータは上記参照）');
+                return;
+              }
 
-                // --- SESSION_CONFIG レスポンス処理 ---
-                if (packet.frameType == Sppv2FrameType.sessionConfig &&
-                    !sessionConfigDone) {
-                  // Bandからのセッション設定完了通知を受信
-                  sessionConfigDone = true;
-                  // ignore: avoid_print
-                  print('[Auth] SESSION_CONFIG 受信 → CMD_NONCE を送信');
+              // ignore: avoid_print
+              print('[Auth] 受信 frameType=0x${packet.frameType.toRadixString(16)} '
+                  'channel=0x${packet.channelId.toRadixString(16)} '
+                  'data len=${packet.data.length}');
 
-                  // Step 3: CMD_NONCE を送信
-                  await _sendNonceCommand(
-                    txChar: txChar,
-                    phoneNonce: phoneNonce,
+              // --- SESSION_CONFIG レスポンス処理 ---
+              if (packet.frameType == Sppv2FrameType.sessionConfig &&
+                  !sessionConfigDone) {
+                sessionConfigDone = true;
+                // ignore: avoid_print
+                print('[Auth] SESSION_CONFIG 受信 → CMD_NONCE を送信');
+                await _sendNonceCommand(txChar: txCharObj!, phoneNonce: phoneNonce);
+                return;
+              }
+
+              // --- 認証チャンネルのレスポンス処理 ---
+              if (packet.channelId != Sppv2Channel.auth) return;
+
+              final rawData = packet.data;
+              if (rawData.isEmpty) return;
+
+              final parsed = _parseProtoCommand(rawData);
+              if (parsed == null) {
+                // ignore: avoid_print
+                print('[Auth] Protobufデコード失敗 raw=${rawData.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
+                return;
+              }
+
+              final type = parsed['type'] as int?;
+              final subType = parsed['subtype'] as int?;
+              // ignore: avoid_print
+              print('[Auth] CMD受信 type=$type subtype=$subType');
+
+              if (type != AuthCommands.authTypeV2) return;
+
+              if (subType == AuthCommands.cmdNonce && pendingKeys == null) {
+                final watchNonce = parsed['watchNonce'] as Uint8List?;
+                final watchHmac = parsed['watchHmac'] as Uint8List?;
+
+                if (watchNonce == null || watchHmac == null) {
+                  completer.complete(
+                    const AuthFailure('CMD_NONCE応答: watchNonce/watchHmacが取得できません'),
+                  );
+                  return;
+                }
+                if (watchNonce.length != 16 || watchHmac.length != 32) {
+                  completer.complete(
+                    AuthFailure('CMD_NONCE応答のデータ長不正: nonce=${watchNonce.length} hmac=${watchHmac.length}'),
                   );
                   return;
                 }
 
-                // --- 認証チャンネルのレスポンス処理 ---
-                if (packet.channelId != Sppv2Channel.auth) continue;
+                final keys = _deriveSessionKeys(
+                  authKey: authKey,
+                  phoneNonce: phoneNonce,
+                  watchNonce: watchNonce,
+                );
+                pendingKeys = keys;
 
-                final rawData = packet.data;
-                if (rawData.isEmpty) continue;
+                final expected = _hmacSha256(
+                  key: keys.decryptionKey,
+                  message: Uint8List.fromList([...watchNonce, ...phoneNonce]),
+                );
 
-                // Protobuf デコード: Command { type(1), subtype(2), auth(3) }
-                final parsed = _parseProtoCommand(rawData);
-                if (parsed == null) {
-                  // ignore: avoid_print
-                  print('[Auth] Protobufデコード失敗 raw=${rawData.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
-                  continue;
+                if (!_constantTimeEqual(expected, watchHmac)) {
+                  completer.complete(const AuthFailure(
+                    'watchHmac 検証失敗（Auth Keyが間違っている可能性があります）',
+                  ));
+                  return;
                 }
 
-                final type = parsed['type'] as int?;
-                final subType = parsed['subtype'] as int?;
-
-                // ignore: avoid_print
-                print('[Auth] CMD受信 type=$type subtype=$subType');
-
-                if (type != AuthCommands.authTypeV2) continue;
-
-                if (subType == AuthCommands.cmdNonce && pendingKeys == null) {
-                  // Step 4: watchNonce(16) + watchHmac(32) を受信
-                  // Protobuf: Auth.watchNonce { nonce(1): bytes, hmac(2): bytes }
-                  final watchNonce = parsed['watchNonce'] as Uint8List?;
-                  final watchHmac = parsed['watchHmac'] as Uint8List?;
-
-                  if (watchNonce == null || watchHmac == null) {
-                    completer.complete(
-                      const AuthFailure('CMD_NONCE応答: watchNonce/watchHmacが取得できません'),
-                    );
-                    return;
-                  }
-                  if (watchNonce.length != 16 || watchHmac.length != 32) {
-                    completer.complete(
-                      AuthFailure('CMD_NONCE応答のデータ長不正: nonce=${watchNonce.length} hmac=${watchHmac.length}'),
-                    );
-                    return;
-                  }
-
-                  // Step 5: セッション鍵を導出
-                  final keys = _deriveSessionKeys(
-                    authKey: authKey,
-                    phoneNonce: phoneNonce,
-                    watchNonce: watchNonce,
+                await _sendAuthCommand(
+                  txChar: txCharObj!,
+                  encryptionKey: keys.encryptionKey,
+                  phoneNonce: phoneNonce,
+                  watchNonce: watchNonce,
+                );
+              } else if (subType == AuthCommands.cmdAuth &&
+                  pendingKeys != null) {
+                final status = parsed['status'] as int? ?? -1;
+                if (status == 0) {
+                  completer.complete(AuthSuccess(pendingKeys!));
+                } else {
+                  completer.complete(
+                    AuthFailure('CMD_AUTH 認証失敗（status: $status）'),
                   );
-                  pendingKeys = keys;
-
-                  // watchHmac を検証
-                  // expected = HMAC-SHA256(key=decryptionKey, msg=watchNonce+phoneNonce)
-                  final expected = _hmacSha256(
-                    key: keys.decryptionKey,
-                    message: Uint8List.fromList([...watchNonce, ...phoneNonce]),
-                  );
-
-                  if (!_constantTimeEqual(expected, watchHmac)) {
-                    completer.complete(const AuthFailure(
-                      'watchHmac 検証失敗（Auth Keyが間違っている可能性があります）',
-                    ));
-                    return;
-                  }
-
-                  // Step 6: CMD_AUTH コマンドを送信
-                  await _sendAuthCommand(
-                    txChar: txChar,
-                    encryptionKey: keys.encryptionKey,
-                    phoneNonce: phoneNonce,
-                    watchNonce: watchNonce,
-                  );
-                } else if (subType == AuthCommands.cmdAuth &&
-                    pendingKeys != null) {
-                  // Step 7: CMD_AUTH 応答 — 認証完了確認
-                  // Gadgetbridge準拠: status == 0（成功）または status == 1（成功）の両方を受け入れる
-                  // ファームウェアバージョンによって返す値が異なる可能性があるため。
-                  final status = parsed['status'] as int? ?? -1;
-                  if (status == 0 || status == 1) {
-                    // ignore: avoid_print
-                    print('[Auth] CMD_AUTH 成功 (status=$status)');
-                    completer.complete(AuthSuccess(pendingKeys!));
-                  } else {
-                    completer.complete(
-                      AuthFailure('CMD_AUTH 認証失敗（status: $status）'),
-                    );
-                  }
                 }
               }
             } catch (e) {
@@ -299,34 +302,40 @@ class BandAuthenticator {
             }
           },
           onError: (Object e) {
+            // ignore: avoid_print
+            print('[Auth] BLE subscribe onError: $e');
             if (!completer.isCompleted) {
               completer.complete(AuthFailure('BLE受信エラー: $e'));
             }
           },
         );
 
+    // ignore: avoid_print
+    print('[Auth] 005e subscribe完了 → 1秒待機後にSESSION_CONFIG送信');
+
     try {
       // Step 1: SESSION_CONFIG リクエストを送信する
-      //
-      // subscribe 後に CCCD (Client Characteristic Configuration Descriptor)
-      // への write が完了するまで待機する必要がある。
-      // iOS では CCCD write に時間がかかるケースが報告されている。
-      // 200ms では不十分な場合があるため、500ms に延長する。
-      // 参考: https://github.com/PhilipsHue/flutter_reactive_ble/issues/526
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      await _sendSessionConfigRequest(txChar: txChar);
+      // subscribe後にCCCD書き込み（setNotifyValue）が完了するまで十分待機する。
+      // iOSではbonding中間処理を含むと時間がかかるため、1秒待機する。
+      await Future<void>.delayed(const Duration(seconds: 1));
+      await _sendSessionConfigRequest(txChar: txCharObj);
       // ignore: avoid_print
       print('[Auth] SESSION_CONFIG 送信完了 → Bandの応答を待機中...');
 
-      // Band 9 のファームウェアによっては SESSION_CONFIG レスポンスを返さない場合がある。
-      // 5秒待っても sessionConfigDone にならなければ CMD_NONCE を直接送信して認証を試みる。
-      await Future<void>.delayed(const Duration(seconds: 5));
-      if (!completer.isCompleted && !sessionConfigDone) {
-        // ignore: avoid_print
-        print('[Auth] SESSION_CONFIG 応答なし → CMD_NONCE を直接送信（フォールバック）');
-        sessionConfigDone = true;
-        await _sendNonceCommand(txChar: txChar, phoneNonce: phoneNonce);
-      }
+      // SESSION_CONFIG応答がない場合のフォールバック:
+      // 5秒待ってもSESSION_CONFIG応答がなければ、直接CMD_NONCEを送信してみる。
+      Future<void>.delayed(const Duration(seconds: 5), () async {
+        if (!completer.isCompleted && !sessionConfigDone) {
+          // ignore: avoid_print
+          print('[Auth] SESSION_CONFIG応答なし（5秒経過）→ CMD_NONCEを直接送信');
+          try {
+            await _sendNonceCommand(txChar: txCharObj!, phoneNonce: phoneNonce);
+          } catch (e) {
+            // ignore: avoid_print
+            print('[Auth] CMD_NONCE直接送信失敗: $e');
+          }
+        }
+      });
 
       return await completer.future;
     } catch (e) {
@@ -340,88 +349,54 @@ class BandAuthenticator {
   // Step 1: SESSION_CONFIG リクエスト送信（認証前ハンドシェイク）
   // ----------------------------------------------------------------
 
-  /// SESSION_CONFIG リクエストを送信する
+  /// SESSION_CONFIG リクエストを送信する（Characteristic オブジェクト版）
   ///
   /// Gadgetbridge の initializeDevice() が行う最初のパケット送信。
-  /// このパケットへの応答を受信して初めて CMD_NONCE を送ることができる。
+  /// write(withResponse: true) で送達確認付きで送信する。
   Future<void> _sendSessionConfigRequest({
-    required QualifiedCharacteristic txChar,
+    required Characteristic txChar,
   }) async {
-    final packet = Sppv2Packet.buildSessionConfig(sequence: _sequence++ & 0xFF);
-    await _ble.writeCharacteristicWithoutResponse(
-      txChar,
-      value: packet.toList(),
-    );
+    final packet = Sppv2Packet.buildSessionConfig(sequence: 0);
+    // ignore: avoid_print
+    print('[Auth] SESSION_CONFIG writeWithResponse送信中 (${packet.length}バイト)...');
+    await txChar.write(packet.toList(), withResponse: false);
+    // ignore: avoid_print
+    print('[Auth] SESSION_CONFIG write完了');
   }
 
   // ----------------------------------------------------------------
   // Step 3: CMD_NONCE コマンド送信
   // ----------------------------------------------------------------
 
-  /// CMD_NONCE コマンドを送信する
-  ///
-  /// Xiaomi Protobuf（xiaomi.proto）に従ったコマンド構造:
-  ///   Command {
-  ///     type: 1         (field 1, varint)
-  ///     subtype: 26     (field 2, varint = CMD_NONCE)
-  ///     auth {          (field 3, length-delimited)
-  ///       phoneNonce {  (field 30, length-delimited)
-  ///         nonce: [16バイト]  (field 1, bytes)
-  ///       }
-  ///     }
-  ///   }
+  /// CMD_NONCE コマンドを送信する（Characteristic オブジェクト版）
   Future<void> _sendNonceCommand({
-    required QualifiedCharacteristic txChar,
+    required Characteristic txChar,
     required Uint8List phoneNonce,
   }) async {
-    // Protobuf手動エンコード
-    // PhoneNonce { nonce(field=1, bytes): phoneNonce }
     final phoneNonceMsg = _protoBytes(field: 1, value: phoneNonce);
-
-    // Auth { phoneNonce(field=30, message): phoneNonceMsg }
     final authMsg = _protoMessage(field: 30, value: phoneNonceMsg);
-
-    // Command { type(field=1)=1, subtype(field=2)=26, auth(field=3): authMsg }
     final commandData = <int>[
-      ..._protoVarint(field: 1, value: 1),                  // type = 1
-      ..._protoVarint(field: 2, value: AuthCommands.cmdNonce), // subtype = 26
-      ..._protoMessage(field: 3, value: authMsg),            // auth
+      ..._protoVarint(field: 1, value: 1),
+      ..._protoVarint(field: 2, value: AuthCommands.cmdNonce),
+      ..._protoMessage(field: 3, value: authMsg),
     ];
 
     final packet = Sppv2Packet.buildCommand(
       channelId: Sppv2Channel.auth,
       payloadType: Sppv2PayloadType.plaintext,
       data: commandData,
-      sequence: _sequence++ & 0xFF,
     );
 
-    await _ble.writeCharacteristicWithoutResponse(
-      txChar,
-      value: packet.toList(),
-    );
+    await txChar.write(packet.toList(), withResponse: false);
   }
 
   // ----------------------------------------------------------------
   // Step 5: CMD_AUTH コマンド送信
   // ----------------------------------------------------------------
 
-  /// CMD_AUTH コマンドを送信する
-  ///
-  /// Xiaomi Protobuf（xiaomi.proto）に従ったコマンド構造:
-  ///   Command {
-  ///     type: 1         (field 1, varint)
-  ///     subtype: 27     (field 2, varint = CMD_AUTH)
-  ///     auth {          (field 3, length-delimited)
-  ///       authStep3 {   (field 32, length-delimited)
-  ///         encryptedNonces: phoneHmac(32バイト)  (field 1, bytes)
-  ///         encryptedDeviceInfo: [空]              (field 2, bytes)
-  ///       }
-  ///     }
-  ///   }
-  ///
-  /// phoneHmac = HMAC-SHA256(key=encryptionKey, msg=phoneNonce+watchNonce)
+  /// CMD_AUTH コマンドを送信する（Characteristic オブジェクト版）
   Future<void> _sendAuthCommand({
-    required QualifiedCharacteristic txChar,
+    required Characteristic txChar,
     required Uint8List encryptionKey,
     required Uint8List phoneNonce,
     required Uint8List watchNonce,
@@ -431,33 +406,24 @@ class BandAuthenticator {
       message: Uint8List.fromList([...phoneNonce, ...watchNonce]),
     );
 
-    // AuthStep3 { encryptedNonces(field=1): phoneHmac, encryptedDeviceInfo(field=2): [] }
     final authStep3Msg = <int>[
       ..._protoBytes(field: 1, value: phoneHmac),
       ..._protoBytes(field: 2, value: Uint8List(0)),
     ];
-
-    // Auth { authStep3(field=32, message): authStep3Msg }
     final authMsg = _protoMessage(field: 32, value: authStep3Msg);
-
-    // Command { type(field=1)=1, subtype(field=2)=27, auth(field=3): authMsg }
     final commandData = <int>[
-      ..._protoVarint(field: 1, value: 1),                  // type = 1
-      ..._protoVarint(field: 2, value: AuthCommands.cmdAuth), // subtype = 27
-      ..._protoMessage(field: 3, value: authMsg),            // auth
+      ..._protoVarint(field: 1, value: 1),
+      ..._protoVarint(field: 2, value: AuthCommands.cmdAuth),
+      ..._protoMessage(field: 3, value: authMsg),
     ];
 
     final packet = Sppv2Packet.buildCommand(
       channelId: Sppv2Channel.auth,
       payloadType: Sppv2PayloadType.plaintext,
       data: commandData,
-      sequence: _sequence++ & 0xFF,
     );
 
-    await _ble.writeCharacteristicWithoutResponse(
-      txChar,
-      value: packet.toList(),
-    );
+    await txChar.write(packet.toList(), withResponse: false);
   }
 
   // ----------------------------------------------------------------
@@ -657,12 +623,7 @@ class BandAuthenticator {
   }
 
   /// 整数をProtobuf varint形式にエンコードする
-  ///
-  /// [value] は 0 以上の整数でなければならない。
-  /// Protobuf の field number やバイト長は常に非負値なので、負の値は不正な入力。
   List<int> _encodeVarint(int value) {
-    assert(value >= 0, '_encodeVarint: 負の値は非サポート (value=$value)');
-    if (value < 0) return [0]; // assertが無効なreleaseビルドでも安全に終了する
     final result = <int>[];
     while (value > 0x7F) {
       result.add((value & 0x7F) | 0x80);

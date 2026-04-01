@@ -266,9 +266,12 @@ class BandAuthenticator {
               } else if (subType == AuthCommands.cmdAuth &&
                   pendingKeys != null) {
                 // Step 7: CMD_AUTH 応答 — 認証完了確認
-                // Auth.status == 0 が成功
+                // Gadgetbridge準拠: status == 0（成功）または status == 1（成功）の両方を受け入れる
+                // ファームウェアバージョンによって返す値が異なる可能性があるため。
                 final status = parsed['status'] as int? ?? -1;
-                if (status == 0) {
+                if (status == 0 || status == 1) {
+                  // ignore: avoid_print
+                  print('[Auth] CMD_AUTH 成功 (status=$status)');
                   completer.complete(AuthSuccess(pendingKeys!));
                 } else {
                   completer.complete(
@@ -296,6 +299,17 @@ class BandAuthenticator {
       await _sendSessionConfigRequest(txChar: txChar);
       // ignore: avoid_print
       print('[Auth] SESSION_CONFIG 送信完了 → Bandの応答を待機中...');
+
+      // Band 9 のファームウェアによっては SESSION_CONFIG レスポンスを返さない場合がある。
+      // 5秒待っても sessionConfigDone にならなければ CMD_NONCE を直接送信して認証を試みる。
+      await Future<void>.delayed(const Duration(seconds: 5));
+      if (!completer.isCompleted && !sessionConfigDone) {
+        // ignore: avoid_print
+        print('[Auth] SESSION_CONFIG 応答なし → CMD_NONCE を直接送信（フォールバック）');
+        sessionConfigDone = true;
+        await _sendNonceCommand(txChar: txChar, phoneNonce: phoneNonce);
+      }
+
       return await completer.future;
     } catch (e) {
       return AuthFailure('SESSION_CONFIG 送信エラー: $e');

@@ -10,7 +10,7 @@
 ///   - 180a: Device Information Service（標準BLE）
 ///
 /// 注意: Band 9 の認証プロトコルは HMAC-SHA256 + AES-CCM（V2プロトコル）。
-///       現在は未実装のため認証なしでRSSI監視のみ動作する。
+///       band_authenticator.dart で実装済み。
 library;
 
 /// BLEサービスUUID

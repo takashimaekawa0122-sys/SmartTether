@@ -15,12 +15,16 @@ import 'package:torch_light/torch_light.dart';
 /// final flash = ref.read(flashControllerProvider);
 /// await flash.turnOn();        // フラッシュON
 /// await flash.turnOff();       // フラッシュOFF
-/// await flash.flashSOS();      // SOSパターン点滅
+/// await flash.flashSOS();      // SOSパターン点滅（途中キャンセル可）
+/// flash.cancelSOS();           // 実行中のSOSをキャンセル
 /// ```
 class FlashController {
   /// フラッシュが現在ONかどうかを追跡するフラグ
   /// torch_lightには状態取得APIがないため自前で管理する
   bool _isOn = false;
+
+  /// SOS点滅のキャンセルフラグ
+  bool _cancelRequested = false;
 
   /// フラッシュが現在ONかどうか
   bool get isOn => _isOn;
@@ -69,9 +73,14 @@ class FlashController {
   ///
   /// 短点滅: 200ms ON → 200ms OFF
   /// 長点滅: 600ms ON → 200ms OFF
+  ///
+  /// [cancelSOS] を呼ぶことで途中でキャンセルできる。
   Future<void> flashSOS() async {
+    _cancelRequested = false;
+
     // 短点滅（・）のパターン
     Future<void> shortFlash() async {
+      if (_cancelRequested) return;
       await turnOn();
       await Future<void>.delayed(const Duration(milliseconds: 200));
       await turnOff();
@@ -80,6 +89,7 @@ class FlashController {
 
     // 長点滅（-）のパターン
     Future<void> longFlash() async {
+      if (_cancelRequested) return;
       await turnOn();
       await Future<void>.delayed(const Duration(milliseconds: 600));
       await turnOff();
@@ -88,15 +98,15 @@ class FlashController {
 
     try {
       // ・・・（短3回）
-      for (var i = 0; i < 3; i++) {
+      for (var i = 0; i < 3 && !_cancelRequested; i++) {
         await shortFlash();
       }
       // ---（長3回）
-      for (var i = 0; i < 3; i++) {
+      for (var i = 0; i < 3 && !_cancelRequested; i++) {
         await longFlash();
       }
       // ・・・（短3回）
-      for (var i = 0; i < 3; i++) {
+      for (var i = 0; i < 3 && !_cancelRequested; i++) {
         await shortFlash();
       }
     } catch (e) {
@@ -105,8 +115,16 @@ class FlashController {
       print('[FlashController] SOSパターン実行中にエラー: $e');
     } finally {
       // キャンセル・例外・正常終了いずれの場合もフラッシュをOFFにする
+      _cancelRequested = false;
       await turnOff();
     }
+  }
+
+  /// 実行中の SOS 点滅をキャンセルする
+  ///
+  /// [flashSOS] が実行中でない場合は何もしない。
+  void cancelSOS() {
+    _cancelRequested = true;
   }
 }
 

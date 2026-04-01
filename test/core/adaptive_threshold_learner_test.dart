@@ -12,6 +12,7 @@ void main() {
     setUp(() async {
       SharedPreferences.setMockInitialValues({});
       learner = AdaptiveThresholdLearner();
+      await learner.initialize(); // _initialized = true にしておかないと addConnectedSample が非同期になる
     });
 
     // -------------------------------------------------------------------------

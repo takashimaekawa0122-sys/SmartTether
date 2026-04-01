@@ -29,16 +29,16 @@ void main() {
     // サンプル数が window サイズ未満の場合
     // -------------------------------------------------------------------------
 
-    test('サンプル1件のとき smoothedValue はその値をそのまま返す', () {
+    test('サンプル1件のとき smoothedValue は -999（外れ値除去には3件必要）', () {
       smoother.addValue(-60);
-      expect(smoother.smoothedValue, closeTo(-60.0, 0.001));
+      expect(smoother.smoothedValue, equals(-999));
     });
 
-    test('サンプル2件のとき smoothedValue は生の平均を返す', () {
+    test('サンプル2件のとき smoothedValue は -999（外れ値除去には3件必要）', () {
       smoother.addValue(-60);
       smoother.addValue(-70);
-      // 2件以下は単純平均
-      expect(smoother.smoothedValue, closeTo(-65.0, 0.001));
+      // 3件未満は誤検知防止のため -999 を返す
+      expect(smoother.smoothedValue, equals(-999));
     });
 
     test('サンプル数が windowSize 未満のとき isReady は false', () {

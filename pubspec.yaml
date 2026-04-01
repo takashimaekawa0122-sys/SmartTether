@@ -61,7 +61,6 @@ dependencies:
   path_provider: ^2.1.5
 
   # 暗号化
-  encrypt: ^5.0.3
   crypto: ^3.0.3
   pointycastle: ^3.9.1
 

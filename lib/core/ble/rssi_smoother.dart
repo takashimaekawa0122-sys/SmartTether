@@ -20,13 +20,11 @@ class RSSISmoother {
 
   /// 平滑化されたRSSI値（外れ値除去済み移動平均）
   ///
-  /// データが不十分な場合は生の平均を返す。
-  /// データが0件の場合は-999（未接続扱い）を返す。
+  /// 外れ値除去には最低3サンプルが必要。
+  /// サンプルが3件未満の場合は -999（未確定）を返して誤検知を防ぐ。
+  /// データが0件の場合も -999（未接続扱い）を返す。
   double get smoothedValue {
-    if (_window.isEmpty) return -999;
-    if (_window.length <= 2) {
-      return _window.reduce((a, b) => a + b) / _window.length;
-    }
+    if (_window.length < 3) return -999;
 
     // 最大・最小を1つずつ除外した平均（外れ値に強い）
     final sorted = _window.toList()..sort();

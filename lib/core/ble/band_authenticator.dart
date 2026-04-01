@@ -85,6 +85,12 @@ class BandAuthenticator {
   final FlutterReactiveBle _ble;
   final _random = Random.secure();
 
+  /// SPPv2 パケットのシーケンス番号（0-255 で循環）
+  ///
+  /// 認証セッションごとに 0 にリセットし、パケット送信のたびにインクリメントする。
+  /// 同一セッション内での重複排除・リオーダー検知に使用される。
+  int _sequence = 0;
+
   BandAuthenticator(this._ble);
 
   /// Band 9 との V2認証を行い、SessionKeys を含む AuthResult を返す
@@ -119,6 +125,7 @@ class BandAuthenticator {
   /// 注意: SESSION_CONFIG ハンドシェイクなしに CMD_NONCE を送っても Band は無視する。
   Future<AuthResult> _doAuthenticate(
       String deviceId, String authKeyHex) async {
+    _sequence = 0; // 認証セッション開始時にシーケンス番号をリセット
     final authKey = _hexToBytes(authKeyHex);
     if (authKey == null) {
       return const AuthFailure('Auth Keyの形式が不正です（32文字HEX文字列が必要）');
@@ -308,7 +315,7 @@ class BandAuthenticator {
   Future<void> _sendSessionConfigRequest({
     required QualifiedCharacteristic txChar,
   }) async {
-    final packet = Sppv2Packet.buildSessionConfig(sequence: 0);
+    final packet = Sppv2Packet.buildSessionConfig(sequence: _sequence++ & 0xFF);
     await _ble.writeCharacteristicWithoutResponse(
       txChar,
       value: packet.toList(),
@@ -353,6 +360,7 @@ class BandAuthenticator {
       channelId: Sppv2Channel.auth,
       payloadType: Sppv2PayloadType.plaintext,
       data: commandData,
+      sequence: _sequence++ & 0xFF,
     );
 
     await _ble.writeCharacteristicWithoutResponse(
@@ -411,6 +419,7 @@ class BandAuthenticator {
       channelId: Sppv2Channel.auth,
       payloadType: Sppv2PayloadType.plaintext,
       data: commandData,
+      sequence: _sequence++ & 0xFF,
     );
 
     await _ble.writeCharacteristicWithoutResponse(

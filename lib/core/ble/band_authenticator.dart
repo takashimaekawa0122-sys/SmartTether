@@ -123,6 +123,11 @@ class BandAuthenticator {
     if (authKey == null) {
       return const AuthFailure('Auth Keyの形式が不正です（32文字HEX文字列が必要）');
     }
+    if (authKey.length != 16) {
+      return AuthFailure(
+        'Auth Keyのバイト長が不正です（16バイト必要、実際: ${authKey.length}バイト）',
+      );
+    }
 
     // 005e = RX（受信：subscribe用）、005f = TX（送信：write用）
     final rxChar = QualifiedCharacteristic(
@@ -611,7 +616,12 @@ class BandAuthenticator {
   }
 
   /// 整数をProtobuf varint形式にエンコードする
+  ///
+  /// [value] は 0 以上の整数でなければならない。
+  /// Protobuf の field number やバイト長は常に非負値なので、負の値は不正な入力。
   List<int> _encodeVarint(int value) {
+    assert(value >= 0, '_encodeVarint: 負の値は非サポート (value=$value)');
+    if (value < 0) return [0]; // assertが無効なreleaseビルドでも安全に終了する
     final result = <int>[];
     while (value > 0x7F) {
       result.add((value & 0x7F) | 0x80);

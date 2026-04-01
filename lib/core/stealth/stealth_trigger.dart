@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../ble/band_protocol.dart';
 import '../ble/ble_manager.dart';
+import '../ble/sppv2_packet.dart';
 import 'stealth_command_handler.dart';
 
 // =========================================================
@@ -129,11 +130,29 @@ class StealthTriggerNotifier extends StateNotifier<StealthAction?> {
 
   /// BLE通知データを受信したときの処理
   ///
-  /// データ形式: 先頭バイトがボタン値（0x01 / 0x03 / 0x04）
+  /// Band 9 の rxChannel 通知は SPPv2 フレーム（先頭 0xa5 0xa5）で
+  /// ラップされている場合とそうでない場合がある。
+  /// SPPv2 の場合はパース後のペイロード先頭バイト、
+  /// そうでない場合は先頭バイトをボタン値として扱う。
   void _onData(List<int> data) {
     if (!mounted || data.isEmpty) return;
 
-    final buttonValue = data[0];
+    int buttonValue;
+    if (data.length >= 2 && data[0] == 0xa5 && data[1] == 0xa5) {
+      // SPPv2 フレームとして解析する
+      final packet = Sppv2Packet.parse(data);
+      if (packet == null || packet.data.isEmpty) {
+        // パース失敗またはペイロード空 → 認証応答などの非ボタン通知として無視
+        // ignore: avoid_print
+        print('[StealthTrigger] SPPv2パース失敗 (len=${data.length})');
+        return;
+      }
+      buttonValue = packet.data[0];
+    } else {
+      // 生バイト列（非SPPv2）の場合は先頭バイトをボタン値として扱う
+      buttonValue = data[0];
+    }
+
     final action = _buttonValueToAction(buttonValue);
 
     if (action == null) {

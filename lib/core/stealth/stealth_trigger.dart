@@ -5,8 +5,8 @@
 /// Riverpod の StateNotifier 経由でUIへ通知する。
 ///
 /// ボタン値と動作の対応（band_protocol.dart の MediaControlButton と一致）:
-/// - 0x04 (doubleTab)  → [StealthAction.voiceMemo]  ボイスメモ開始/停止
-/// - 0x03 (tripleTab)  → [StealthAction.emergency]  緊急アラート
+/// - 0x04 (doubleTap)  → [StealthAction.voiceMemo]  ボイスメモ開始/停止
+/// - 0x03 (tripleTap)  → [StealthAction.emergency]  緊急アラート
 /// - 0x01 (longPress)  → [StealthAction.safeSignal] 「今は安全」手動通知
 library;
 
@@ -161,10 +161,10 @@ class StealthTriggerNotifier extends StateNotifier<StealthAction?> {
   /// 未知の値の場合は null を返す。
   StealthAction? _buttonValueToAction(int buttonValue) {
     switch (buttonValue) {
-      case MediaControlButton.doubleTab:
+      case MediaControlButton.doubleTap:
         // ダブルタップ → ボイスメモ
         return StealthAction.voiceMemo;
-      case MediaControlButton.tripleTab:
+      case MediaControlButton.tripleTap:
         // トリプルタップ → 緊急アラート
         return StealthAction.emergency;
       case MediaControlButton.longPress:
@@ -249,26 +249,7 @@ final stealthTriggerProvider =
     commandHandler: ref.read(stealthCommandHandlerProvider),
   );
 
-  // TODO: V2プロトコル認証成功後に有効化
-  // BLE接続状態を監視して、接続完了時に自動で監視を開始する。
-  // V2プロトコル未実装のため、subscribeすると認証なしでエラーになる。
-  // 認証実装後に以下のコメントを解除すること。
-  //
-  // ref.listen<AsyncValue<BleConnectionState>>(
-  //   bleConnectionStateProvider,
-  //   (_, next) {
-  //     // dispose後にコールバックが来た場合は無視する
-  //     if (!notifier.mounted) return;
-  //     next.whenData((connectionState) {
-  //       if (connectionState == BleConnectionState.connected) {
-  //         notifier.startListening();
-  //       } else if (connectionState == BleConnectionState.disconnected ||
-  //           connectionState == BleConnectionState.error) {
-  //         notifier.stopListening();
-  //       }
-  //     });
-  //   },
-  // );
+  // TODO: V2プロトコル認証成功後に、BLE接続状態を監視して自動で開始/停止を切り替える
 
   ref.onDispose(notifier.dispose);
   return notifier;

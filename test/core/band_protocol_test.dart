@@ -130,11 +130,11 @@ void main() {
 
   group('MediaControlButton', () {
     test('doubleTab が 0x04（Band 9: 次の曲）', () {
-      expect(MediaControlButton.doubleTab, equals(0x04));
+      expect(MediaControlButton.doubleTap, equals(0x04));
     });
 
     test('tripleTab が 0x03（Band 9: 前の曲）', () {
-      expect(MediaControlButton.tripleTab, equals(0x03));
+      expect(MediaControlButton.tripleTap, equals(0x03));
     });
 
     test('longPress が 0x01（Band 9: 再生/停止）', () {

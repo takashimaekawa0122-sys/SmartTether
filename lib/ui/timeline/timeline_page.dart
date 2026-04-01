@@ -110,10 +110,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
     }
 
     // 開始：Band 9 設定チェック
-    final mac = await AppSecrets.getBandMacAddress();
-    final authKey = await AppSecrets.getBandAuthKey();
-    final isConfigured =
-        AppSecrets.isValidMacAddress(mac) && AppSecrets.isValidAuthKey(authKey);
+    final isConfigured = await AppSecrets.isBandConfigured();
 
     if (!isConfigured) {
       if (mounted) {
@@ -226,7 +223,7 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
         ],
       ),
       body: entries.isEmpty
-          ? _EmptyState()
+          ? const _EmptyState()
           : _TimelineList(entries: entries),
       floatingActionButton: _MonitoringFab(
         isRunning: isRunning,
@@ -441,6 +438,8 @@ class _MonitoringFab extends StatelessWidget {
 
 /// タイムラインが空のときに表示するウィジェット
 class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
   @override
   Widget build(BuildContext context) {
     return const Center(

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/security/app_secrets.dart';
-import '../timeline/timeline_page.dart';
-import '../alert/alert_overlay.dart';
+import '../home_stack.dart';
 
-/// オンボーディング完了フラグのキー
-const _kOnboardingDoneKey = 'onboarding_done';
+/// オンボーディング完了フラグのSharedPreferencesキー
+///
+/// main.dart と onboarding_page.dart の両方で使用するため公開定数にする。
+const kOnboardingDoneKey = 'onboarding_done';
 
 /// 初回起動時に表示する3ステップのオンボーディング画面
 class OnboardingPage extends StatefulWidget {
@@ -59,12 +60,12 @@ class _OnboardingPageState extends State<OnboardingPage> {
     } else {
       // 「始める」タップ: フラグを保存してメイン画面へ
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_kOnboardingDoneKey, true);
+      await prefs.setBool(kOnboardingDoneKey, true);
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) => const _HomeStack(),
+          builder: (_) => const HomeStack(),
         ),
       );
     }
@@ -150,9 +151,9 @@ class _OnboardingPageState extends State<OnboardingPage> {
 class _StepWelcome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return _StepScaffold(
+    return const _StepScaffold(
       icon: Icons.bluetooth,
-      iconColor: const Color(0xFF7C3AED),
+      iconColor: Color(0xFF7C3AED),
       title: 'Smart Tether',
       description: 'Band 9が離れると自動でアラートをお知らせします',
     );
@@ -256,22 +257,22 @@ class _StepBandInfo extends StatelessWidget {
                 if (hasAuthKey) ...[
                   const SizedBox(height: 10),
                   // 認証キー行
-                  Row(
+                  const Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.check_circle,
                         size: 16,
                         color: Color(0xFF4ECDC4),
                       ),
-                      const SizedBox(width: 8),
-                      const Text(
+                      SizedBox(width: 8),
+                      Text(
                         '認証キー: ',
                         style: TextStyle(
                           color: Color(0xFF8B8B9E),
                           fontSize: 14,
                         ),
                       ),
-                      const Text(
+                      Text(
                         '設定済み',
                         style: TextStyle(
                           color: Color(0xFF4ECDC4),
@@ -297,9 +298,9 @@ class _StepBandInfo extends StatelessWidget {
 class _StepReady extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return _StepScaffold(
+    return const _StepScaffold(
       icon: Icons.check_circle,
-      iconColor: const Color(0xFF4ECDC4),
+      iconColor: Color(0xFF4ECDC4),
       title: '準備完了！',
       description: 'メイン画面の「監視開始」ボタンをタップするだけで始まります',
     );
@@ -403,21 +404,3 @@ class _DotIndicator extends StatelessWidget {
   }
 }
 
-// ============================================================
-// メイン画面スタック（TimelinePage + AlertOverlay）
-// ============================================================
-
-/// オンボーディング完了後に遷移するホーム画面
-class _HomeStack extends StatelessWidget {
-  const _HomeStack();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Stack(
-      children: [
-        TimelinePage(),
-        AlertOverlayController(),
-      ],
-    );
-  }
-}

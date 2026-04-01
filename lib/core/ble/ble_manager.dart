@@ -62,9 +62,7 @@ class BleManager {
 
   int _retryCount = 0;
   bool _disposed = false;
-  bool _isAuthenticating = false;
   String? _currentDeviceId;
-
 
   /// 接続状態のストリーム
   Stream<BleConnectionState> get connectionStateStream =>
@@ -248,7 +246,6 @@ class BleManager {
 
               switch (update.connectionState) {
                 case DeviceConnectionState.connected:
-                  _isAuthenticating = true;
                   _updateState(BleConnectionState.authenticating);
 
                   // MTU 512 をリクエストする（Gadgetbridge: requestMtu(512) と同一）
@@ -270,8 +267,6 @@ class BleManager {
                   final authResult =
                       await _authenticator.authenticateV2(deviceId, authKey);
 
-                  _isAuthenticating = false;
-
                   if (authResult is AuthFailure) {
                     // ignore: avoid_print
                     print('[BleManager] 認証失敗: ${authResult.error}');
@@ -290,8 +285,6 @@ class BleManager {
                   safeComplete(const BleSuccess(null));
 
                 case DeviceConnectionState.disconnected:
-                  // 認証中の切断イベントは認証完了後に処理されるため無視する
-                  if (_isAuthenticating) break;
                   _rssiTimer?.cancel();
                   _rssiSmoother.reset();
                   if (completer != null) {

@@ -69,6 +69,15 @@ class AppSecrets {
     return key != null && key.isNotEmpty && key != 'X';
   }
 
+  /// Band 9 の設定（MACアドレス・Auth Key）が実際の値かどうか確認する
+  ///
+  /// プレースホルダー（'XX:XX:XX:XX:XX:XX' / 'X'）は未設定とみなす。
+  static Future<bool> isBandConfigured() async {
+    final mac = await getBandMacAddress();
+    final authKey = await getBandAuthKey();
+    return isValidMacAddress(mac) && isValidAuthKey(authKey);
+  }
+
   /// MACアドレスが有効な値かどうか判定する
   static bool isValidMacAddress(String? mac) {
     return mac != null && mac.isNotEmpty && mac != 'XX:XX:XX:XX:XX:XX';

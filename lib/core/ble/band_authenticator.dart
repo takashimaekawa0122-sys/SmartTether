@@ -537,10 +537,10 @@ class BandAuthenticator {
     required SessionKeys keys,
     required List<String> diagLog,
   }) async {
-    // encryptedNonces = HMAC-SHA256(key=decryptionKey, msg=phoneNonce+watchNonce)
-    // 試行: watchHmac検証と同じキー(decryptionKey=keyMaterial[0:16])を使用
+    // encryptedNonces = HMAC-SHA256(key=encryptionKey, msg=phoneNonce||watchNonce)
+    // Gadgetbridge準拠: encryptionKey = keyMaterial[16:32]
     final encryptedNonces = _hmacSha256(
-      key: keys.decryptionKey,
+      key: keys.encryptionKey,
       message: Uint8List.fromList([...phoneNonce, ...watchNonce]),
     );
 
@@ -557,7 +557,8 @@ class BandAuthenticator {
       ..._protoString(field: 5, value: region),       // region
     ];
 
-    // AES-CCM でデバイス情報を暗号化する（元の組み合わせに戻す）
+    // AES-CCM でデバイス情報を暗号化する
+    // Gadgetbridge準拠: encryptionKey + encryptionNonce
     final encNonce = Uint8List(12);
     encNonce.setRange(0, 4, keys.encryptionNonce);
     // bytes 4-11: all zeros (packetId=0)
@@ -568,6 +569,9 @@ class BandAuthenticator {
       plaintext: Uint8List.fromList(authDeviceInfo),
     );
 
+    // デバッグ: 送信データの詳細ログ
+    diagLog.add('[DBG] encNonces=${encryptedNonces.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}');
+    diagLog.add('[DBG] devInfoPt=${authDeviceInfo.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}');
     diagLog.add('[DBG] CCM: nonce=${encNonce.map((b) => b.toRadixString(16).padLeft(2, '0')).join()} devInfo=${encryptedDeviceInfo == null ? "null!" : "${encryptedDeviceInfo.length}B"}');
 
     // AuthStep3: encryptedNonces(field 1) + encryptedDeviceInfo(field 2)
@@ -591,7 +595,7 @@ class BandAuthenticator {
       sequence: seq,
     );
 
-    diagLog.add('[DBG] AUTH pkt ${packet.length}B sent');
+    diagLog.add('[DBG] AUTH pkt ${packet.length}B: ${packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join()}');
     await txChar.write(packet.toList(), withResponse: false);
   }
 

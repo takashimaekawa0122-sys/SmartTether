@@ -556,15 +556,25 @@ class BandAuthenticator {
     // AES-CCM でデバイス情報を暗号化する
     // Gadgetbridge: encrypt(authDeviceInfo.toByteArray(), 0)
     //   -> encrypt(encryptionKey, packetNonce(encryptionNonce + 0 + 0), payload)
-    final encryptionNonce = Uint8List(12);
-    encryptionNonce.setRange(0, 4, keys.encryptionNonce);
+    final encNonce = Uint8List(12);
+    encNonce.setRange(0, 4, keys.encryptionNonce);
     // bytes 4-11: all zeros (packetId=0)
+
+    // ignore: avoid_print
+    print('[Auth] authDeviceInfo(${authDeviceInfo.length}B): ${authDeviceInfo.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+    // ignore: avoid_print
+    print('[Auth] CCM encKey: ${keys.encryptionKey.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+    // ignore: avoid_print
+    print('[Auth] CCM nonce: ${encNonce.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
 
     final encryptedDeviceInfo = encryptAesCcm(
       key: keys.encryptionKey,
-      nonce: encryptionNonce,
+      nonce: encNonce,
       plaintext: Uint8List.fromList(authDeviceInfo),
     );
+
+    // ignore: avoid_print
+    print('[Auth] encryptedDeviceInfo: ${encryptedDeviceInfo == null ? "null (CCM失敗!)" : "${encryptedDeviceInfo.length}B: ${encryptedDeviceInfo.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}"}');
 
     // AuthStep3: encryptedNonces(field 1) + encryptedDeviceInfo(field 2)
     final authStep3Msg = <int>[
@@ -663,7 +673,8 @@ class BandAuthenticator {
 
   /// Auth Protobufメッセージを解析してresultに格納する
   ///
-  /// Auth { userId(7), status(8), watchNonce(31) { nonce(1), hmac(2) } }
+  /// CMD_AUTH応答: { step(1), userId(2), status(3) }
+  /// CMD_NONCE応答: { step(1), watchNonce(31) { nonce(1), hmac(2) } }
   void _parseProtoAuth(Uint8List data, Map<String, dynamic> result) {
     var pos = 0;
     while (pos < data.length) {
@@ -680,7 +691,7 @@ class BandAuthenticator {
         if (valResult == null) break;
         final val = valResult.$1;
         pos = valResult.$2;
-        if (fieldNumber == 8) result['status'] = val; // Auth.status
+        if (fieldNumber == 3) result['status'] = val; // Auth.status (CMD_AUTH応答)
       } else if (wireType == 2) {
         final lenResult = _decodeVarint(data, pos);
         if (lenResult == null) break;
@@ -898,6 +909,8 @@ class BandAuthenticator {
       cipher.init(true, params); // true = 暗号化
       return cipher.process(plaintext);
     } catch (e) {
+      // ignore: avoid_print
+      print('[Auth] encryptAesCcm 例外: $e');
       return null;
     }
   }

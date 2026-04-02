@@ -384,6 +384,7 @@ class BandAuthenticator {
                 }
               } else if (subType == AuthCommands.cmdAuth &&
                   pendingKeys != null) {
+                diagLog.add('[DBG] AUTH resp raw=${rawData.map((b) => b.toRadixString(16).padLeft(2, "0")).join()}');
                 final status = parsed['status'] as int? ?? -1;
                 if (status == 0) {
                   diagLog.add('${ts()} [SUCCESS] 認証成功 (status=0)');
@@ -701,7 +702,16 @@ class BandAuthenticator {
         if (fieldNumber == 31) {
           // WatchNonce { nonce(1): bytes, hmac(2): bytes }
           _parseProtoWatchNonce(bytes, result);
+        } else if (fieldNumber == 33) {
+          // CMD_AUTH応答のネストされたメッセージ（status等を含む可能性）
+          _parseProtoAuth(bytes, result);
         }
+      } else if (wireType == 1) {
+        // 64-bit fixed: スキップ
+        pos += 8;
+      } else if (wireType == 5) {
+        // 32-bit fixed: スキップ
+        pos += 4;
       } else {
         break;
       }

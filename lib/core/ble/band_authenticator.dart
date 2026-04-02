@@ -138,21 +138,26 @@ class BandAuthenticator {
       // ignore: avoid_print
       print('[Auth] サービスディスカバリ: ${services.length}サービス検出');
 
-      final fe95Uuid = Uuid.parse(BandServiceUUIDs.main);
-      final rxUuid = Uuid.parse(BandCharacteristicUUIDs.rxChannel);
-      final txUuid = Uuid.parse(BandCharacteristicUUIDs.txChannel);
+      // iOSのCoreBluetoothは短縮UUID（2バイト）で返す場合があるため、
+      // expanded（128ビット展開後）で比較する。
+      final fe95Uuid = Uuid.parse(BandServiceUUIDs.main).expanded;
+      final rxUuid = Uuid.parse(BandCharacteristicUUIDs.rxChannel).expanded;
+      final txUuid = Uuid.parse(BandCharacteristicUUIDs.txChannel).expanded;
 
       for (final service in services) {
-        if (service.id == fe95Uuid) {
+        // ignore: avoid_print
+        print('[Auth] サービス: ${service.id} (expanded: ${service.id.expanded})');
+        if (service.id.expanded == fe95Uuid) {
           // ignore: avoid_print
           print('[Auth] fe95サービス発見 (${service.characteristics.length}個のchar)');
           for (final char in service.characteristics) {
             // ignore: avoid_print
-            print('[Auth]   char: ${char.id} notify=${char.isNotifiable} '
+            print('[Auth]   char: ${char.id} (expanded: ${char.id.expanded}) '
+                'notify=${char.isNotifiable} '
                 'writeNoResp=${char.isWritableWithoutResponse} '
                 'writeResp=${char.isWritableWithResponse}');
-            if (char.id == rxUuid) rxCharObj = char;
-            if (char.id == txUuid) txCharObj = char;
+            if (char.id.expanded == rxUuid) rxCharObj = char;
+            if (char.id.expanded == txUuid) txCharObj = char;
           }
           break;
         }

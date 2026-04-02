@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command \"Remove-Item -Path ''C:\\\\claude\\\\SmartTether\\\\.claude\\\\worktrees\\\\gracious-booth'' -Recurse -Force; Write-Output ''完了''\")",
+      "Bash(flutter build:*)",
+      "Bash(flutter analyze:*)"
+    ]
+  }
+}

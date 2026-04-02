@@ -537,9 +537,10 @@ class BandAuthenticator {
     required SessionKeys keys,
     required List<String> diagLog,
   }) async {
-    // encryptedNonces = HMAC-SHA256(key=encryptionKey, msg=phoneNonce+watchNonce)
+    // encryptedNonces = HMAC-SHA256(key=decryptionKey, msg=phoneNonce+watchNonce)
+    // 試行: watchHmac検証と同じキー(decryptionKey=keyMaterial[0:16])を使用
     final encryptedNonces = _hmacSha256(
-      key: encryptionKey,
+      key: keys.decryptionKey,
       message: Uint8List.fromList([...phoneNonce, ...watchNonce]),
     );
 

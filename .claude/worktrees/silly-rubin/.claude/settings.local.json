@@ -5,7 +5,12 @@
       "WebFetch(domain:github.com)",
       "WebSearch",
       "WebFetch(domain:codeberg.org)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(git -C /c/claude/SmartTether branch -a)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:gadgetbridge.org)",
+      "Bash(gh api:*)",
+      "Bash(flutter test:*)"
     ]
   }
 }

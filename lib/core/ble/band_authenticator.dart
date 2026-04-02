@@ -361,8 +361,9 @@ class BandAuthenticator {
   }) async {
     final packet = Sppv2Packet.buildSessionConfig(sequence: 0);
     // ignore: avoid_print
-    print('[Auth] SESSION_CONFIG writeWithResponse=true送信中 (${packet.length}バイト)...');
-    await txChar.write(packet.toList(), withResponse: true);
+    // 005fはwrite without responseのみ対応（withResponse: falseが必須）
+    print('[Auth] SESSION_CONFIG write送信中 (${packet.length}バイト)...');
+    await txChar.write(packet.toList(), withResponse: false);
     // ignore: avoid_print
     print('[Auth] SESSION_CONFIG write完了');
   }

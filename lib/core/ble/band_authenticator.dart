@@ -693,7 +693,10 @@ class BandAuthenticator {
         if (valResult == null) break;
         final val = valResult.$1;
         pos = valResult.$2;
-        if (fieldNumber == 8) result['status'] = val; // Auth.status (field 8)
+        // Auth.statusはfield 3(失敗レスポンス)またはfield 8(成功レスポンス)に存在する可能性
+        if (fieldNumber == 3 || fieldNumber == 8) {
+          result['status'] ??= val; // 最初に見つかった値を使用
+        }
       } else if (wireType == 2) {
         final lenResult = _decodeVarint(data, pos);
         if (lenResult == null) break;

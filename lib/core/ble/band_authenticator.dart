@@ -93,14 +93,28 @@ class BandAuthenticator {
   /// [authKeyHex]: 32文字のHEX文字列（16バイト）
   /// タイムアウトは30秒。
   Future<AuthResult> authenticateV2(String deviceId, String authKeyHex) async {
+    final diagLog = <String>[];
+    final startTime = DateTime.now();
+
+    String diagTimestamp() {
+      final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+      return '+${elapsed}ms';
+    }
+
     try {
-      return await _doAuthenticate(deviceId, authKeyHex)
+      return await _doAuthenticate(deviceId, authKeyHex, diagLog, diagTimestamp)
           .timeout(const Duration(seconds: 30));
     } on TimeoutException {
-      return const AuthFailure(
-          '認証タイムアウト（30秒）: SESSION_CONFIGへの応答またはCMD_NONCEへの応答なし');
+      diagLog.add('${diagTimestamp()} [TIMEOUT] 30秒タイムアウト発生');
+      final diagText = diagLog.join('\n');
+      return AuthFailure(
+        '認証タイムアウト（30秒）\n\n'
+        '── 診断ログ ──\n$diagText',
+      );
     } catch (e) {
-      return AuthFailure('認証エラー: $e');
+      diagLog.add('${diagTimestamp()} [ERROR] 例外: $e');
+      final diagText = diagLog.join('\n');
+      return AuthFailure('認証エラー: $e\n\n── 診断ログ ──\n$diagText');
     }
   }
 
@@ -121,11 +135,17 @@ class BandAuthenticator {
   ///   Step 6: CMD_AUTH を送信（phoneHmac 32バイト）
   ///   Step 7: Band から認証完了レスポンスを受信
   Future<AuthResult> _doAuthenticate(
-      String deviceId, String authKeyHex) async {
+    String deviceId,
+    String authKeyHex,
+    List<String> diagLog,
+    String Function() ts,
+  ) async {
     final authKey = _hexToBytes(authKeyHex);
     if (authKey == null) {
       return const AuthFailure('Auth Keyの形式が不正です（32文字HEX文字列が必要）');
     }
+
+    diagLog.add('${ts()} [START] 認証開始 device=$deviceId');
 
     // --- getDiscoveredServices から実際の Characteristic オブジェクトを取得 ---
     // QualifiedCharacteristic（ハードコードUUID）の代わりに、
@@ -135,6 +155,7 @@ class BandAuthenticator {
     Characteristic? txCharObj;
     try {
       final services = await _ble.getDiscoveredServices(deviceId);
+      diagLog.add('${ts()} [DISC] サービス数=${services.length}');
       // ignore: avoid_print
       print('[Auth] サービスディスカバリ: ${services.length}サービス検出');
 
@@ -148,6 +169,7 @@ class BandAuthenticator {
         // ignore: avoid_print
         print('[Auth] サービス: ${service.id} (expanded: ${service.id.expanded})');
         if (service.id.expanded == fe95Uuid) {
+          diagLog.add('${ts()} [DISC] fe95サービス発見 (char数=${service.characteristics.length})');
           // ignore: avoid_print
           print('[Auth] fe95サービス発見 (${service.characteristics.length}個のchar)');
           for (final char in service.characteristics) {
@@ -163,16 +185,21 @@ class BandAuthenticator {
         }
       }
     } catch (e) {
-      return AuthFailure('サービスディスカバリ失敗: $e');
+      diagLog.add('${ts()} [ERROR] サービスディスカバリ失敗: $e');
+      return AuthFailure('サービスディスカバリ失敗: $e\n\n── 診断ログ ──\n${diagLog.join('\n')}');
     }
 
     if (rxCharObj == null || txCharObj == null) {
+      diagLog.add('${ts()} [ERROR] char未検出 rx=${rxCharObj != null} tx=${txCharObj != null}');
       return AuthFailure(
         'fe95サービスの005e/005fキャラクタリスティックが見つかりません '
-        '(rx=${rxCharObj != null}, tx=${txCharObj != null})',
+        '(rx=${rxCharObj != null}, tx=${txCharObj != null})\n\n'
+        '── 診断ログ ──\n${diagLog.join('\n')}',
       );
     }
 
+    diagLog.add('${ts()} [DISC] 005e notify=${rxCharObj.isNotifiable} / '
+        '005f writeNoResp=${txCharObj.isWritableWithoutResponse}');
     // ignore: avoid_print
     print('[Auth] 005e(RX): isNotifiable=${rxCharObj.isNotifiable}');
     // ignore: avoid_print
@@ -194,14 +221,17 @@ class BandAuthenticator {
 
     // Step 0: Characteristic.subscribe() で直接 Notify をサブスクライブ
     // QualifiedCharacteristic 経由ではなく、実際のオブジェクトを使う
+    diagLog.add('${ts()} [SUB] 005e subscribe開始...');
     // ignore: avoid_print
     print('[Auth] 005e (RX) にsubscribe開始（Characteristicオブジェクト直接使用）...');
     subscription = rxCharObj
         .subscribe()
         .listen(
           (data) async {
+            final hex = data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
+            diagLog.add('${ts()} [RECV] ${data.length}バイト: $hex');
             // ignore: avoid_print
-            print('[Auth] BLE受信 ${data.length}バイト raw=${data.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
+            print('[Auth] BLE受信 ${data.length}バイト raw=$hex');
             if (data.isEmpty || completer.isCompleted) return;
 
             try {
@@ -221,20 +251,26 @@ class BandAuthenticator {
               if (packet.frameType == Sppv2FrameType.sessionConfig &&
                   !sessionConfigDone) {
                 sessionConfigDone = true;
+                diagLog.add('${ts()} [OK] SESSION_CONFIG応答受信 → CMD_NONCE送信');
                 // ignore: avoid_print
                 print('[Auth] SESSION_CONFIG 受信 → CMD_NONCE を送信');
                 await _sendNonceCommand(txChar: txCharObj!, phoneNonce: phoneNonce);
+                diagLog.add('${ts()} [OK] CMD_NONCE送信完了 → watchNonce応答待ち');
                 return;
               }
 
               // --- 認証チャンネルのレスポンス処理 ---
-              if (packet.channelId != Sppv2Channel.auth) return;
+              if (packet.channelId != Sppv2Channel.auth) {
+                diagLog.add('${ts()} [SKIP] authチャンネル以外: channel=0x${packet.channelId.toRadixString(16)}');
+                return;
+              }
 
               final rawData = packet.data;
               if (rawData.isEmpty) return;
 
               final parsed = _parseProtoCommand(rawData);
               if (parsed == null) {
+                diagLog.add('${ts()} [WARN] Protobufデコード失敗');
                 // ignore: avoid_print
                 print('[Auth] Protobufデコード失敗 raw=${rawData.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
                 return;
@@ -242,6 +278,7 @@ class BandAuthenticator {
 
               final type = parsed['type'] as int?;
               final subType = parsed['subtype'] as int?;
+              diagLog.add('${ts()} [CMD] type=$type subtype=$subType');
               // ignore: avoid_print
               print('[Auth] CMD受信 type=$type subtype=$subType');
 
@@ -252,18 +289,21 @@ class BandAuthenticator {
                 final watchHmac = parsed['watchHmac'] as Uint8List?;
 
                 if (watchNonce == null || watchHmac == null) {
+                  diagLog.add('${ts()} [ERROR] CMD_NONCE応答にnonce/hmacなし');
                   completer.complete(
-                    const AuthFailure('CMD_NONCE応答: watchNonce/watchHmacが取得できません'),
+                    AuthFailure('CMD_NONCE応答: watchNonce/watchHmacが取得できません\n\n── 診断ログ ──\n${diagLog.join('\n')}'),
                   );
                   return;
                 }
                 if (watchNonce.length != 16 || watchHmac.length != 32) {
+                  diagLog.add('${ts()} [ERROR] データ長不正 nonce=${watchNonce.length} hmac=${watchHmac.length}');
                   completer.complete(
-                    AuthFailure('CMD_NONCE応答のデータ長不正: nonce=${watchNonce.length} hmac=${watchHmac.length}'),
+                    AuthFailure('CMD_NONCE応答のデータ長不正: nonce=${watchNonce.length} hmac=${watchHmac.length}\n\n── 診断ログ ──\n${diagLog.join('\n')}'),
                   );
                   return;
                 }
 
+                diagLog.add('${ts()} [OK] watchNonce(${watchNonce.length}B)+watchHmac(${watchHmac.length}B)受信 → 鍵導出...');
                 final keys = _deriveSessionKeys(
                   authKey: authKey,
                   phoneNonce: phoneNonce,
@@ -277,72 +317,92 @@ class BandAuthenticator {
                 );
 
                 if (!_constantTimeEqual(expected, watchHmac)) {
+                  diagLog.add('${ts()} [ERROR] watchHmac検証失敗（Auth Key不正の可能性）');
                   completer.complete(const AuthFailure(
                     'watchHmac 検証失敗（Auth Keyが間違っている可能性があります）',
                   ));
                   return;
                 }
 
+                diagLog.add('${ts()} [OK] watchHmac検証成功 → CMD_AUTH送信...');
                 await _sendAuthCommand(
                   txChar: txCharObj!,
                   encryptionKey: keys.encryptionKey,
                   phoneNonce: phoneNonce,
                   watchNonce: watchNonce,
                 );
+                diagLog.add('${ts()} [OK] CMD_AUTH送信完了 → 認証結果待ち');
               } else if (subType == AuthCommands.cmdAuth &&
                   pendingKeys != null) {
                 final status = parsed['status'] as int? ?? -1;
                 if (status == 0) {
+                  diagLog.add('${ts()} [SUCCESS] 認証成功 (status=0)');
                   completer.complete(AuthSuccess(pendingKeys!));
                 } else {
+                  diagLog.add('${ts()} [ERROR] CMD_AUTH失敗 status=$status');
                   completer.complete(
-                    AuthFailure('CMD_AUTH 認証失敗（status: $status）'),
+                    AuthFailure('CMD_AUTH 認証失敗（status: $status）\n\n── 診断ログ ──\n${diagLog.join('\n')}'),
                   );
                 }
               }
             } catch (e) {
+              diagLog.add('${ts()} [ERROR] 受信処理例外: $e');
               if (!completer.isCompleted) {
-                completer.complete(AuthFailure('認証レスポンス処理エラー: $e'));
+                completer.complete(AuthFailure('認証レスポンス処理エラー: $e\n\n── 診断ログ ──\n${diagLog.join('\n')}'));
               }
             }
           },
           onError: (Object e) {
+            diagLog.add('${ts()} [ERROR] BLE onError: $e');
             // ignore: avoid_print
             print('[Auth] BLE subscribe onError: $e');
             if (!completer.isCompleted) {
-              completer.complete(AuthFailure('BLE受信エラー: $e'));
+              completer.complete(AuthFailure('BLE受信エラー: $e\n\n── 診断ログ ──\n${diagLog.join('\n')}'));
             }
           },
         );
 
+    diagLog.add('${ts()} [SUB] subscribe登録完了 → 3秒待機（CCCD書き込み完了待ち）...');
     // ignore: avoid_print
-    print('[Auth] 005e subscribe完了 → 1秒待機後にSESSION_CONFIG送信');
+    print('[Auth] 005e subscribe完了 → 3秒待機後にSESSION_CONFIG送信');
 
     try {
       // Step 1: SESSION_CONFIG リクエストを送信する
       // subscribe後にCCCD書き込み（setNotifyValue）が完了するまで十分待機する。
-      // iOSではbonding中間処理を含むと時間がかかるため、1秒待機する。
-      await Future<void>.delayed(const Duration(seconds: 1));
+      // iOSではbondingデバイスのCCCD書き込みに暗号化ネゴシエーションが加わるため、
+      // 3秒待機する（1秒では不足することがある）。
+      await Future<void>.delayed(const Duration(seconds: 3));
+      diagLog.add('${ts()} [SEND] SESSION_CONFIG送信開始...');
       await _sendSessionConfigRequest(txChar: txCharObj);
+      diagLog.add('${ts()} [SEND] SESSION_CONFIG送信完了 → Band応答待ち...');
       // ignore: avoid_print
       print('[Auth] SESSION_CONFIG 送信完了 → Bandの応答を待機中...');
 
       // SESSION_CONFIG無応答フォールバック:
-      // 5秒待っても応答がなければ認証失敗として completer を完了させる。
+      // 10秒待っても応答がなければ認証失敗として completer を完了させる。
       // （CMD_NONCEを直接送っても Band 9 が無視するため、切断→再接続に任せる）
-      Future<void>.delayed(const Duration(seconds: 5), () {
+      Future<void>.delayed(const Duration(seconds: 10), () {
         if (!completer.isCompleted && !sessionConfigDone) {
+          diagLog.add('${ts()} [TIMEOUT] SESSION_CONFIG無応答（10秒）');
           // ignore: avoid_print
-          print('[Auth] SESSION_CONFIG応答なし（5秒経過）→ 認証失敗として終了し再接続へ');
+          print('[Auth] SESSION_CONFIG応答なし（10秒経過）→ 認証失敗として終了し再接続へ');
           completer.complete(
-            const AuthFailure('SESSION_CONFIG無応答（5秒）: Band 9が応答しません。Mi Fitnessが干渉している可能性があります'),
+            AuthFailure(
+              'SESSION_CONFIG無応答（10秒）: Band 9が応答しません\n\n'
+              '考えられる原因:\n'
+              '・Mi Fitnessアプリが干渉している（Bluetoothをオフに）\n'
+              '・Band 9のBluetooth設定をリセット（「デバイスを削除」）\n'
+              '・Auth Keyが正しくない\n\n'
+              '── 診断ログ ──\n${diagLog.join('\n')}',
+            ),
           );
         }
       });
 
       return await completer.future;
     } catch (e) {
-      return AuthFailure('SESSION_CONFIG 送信エラー: $e');
+      diagLog.add('${ts()} [ERROR] SESSION_CONFIG送信例外: $e');
+      return AuthFailure('SESSION_CONFIG 送信エラー: $e\n\n── 診断ログ ──\n${diagLog.join('\n')}');
     } finally {
       await subscription.cancel();
     }
@@ -360,8 +420,8 @@ class BandAuthenticator {
     required Characteristic txChar,
   }) async {
     final packet = Sppv2Packet.buildSessionConfig(sequence: 0);
-    // ignore: avoid_print
     // 005fはwrite without responseのみ対応（withResponse: falseが必須）
+    // ignore: avoid_print
     print('[Auth] SESSION_CONFIG write送信中 (${packet.length}バイト)...');
     await txChar.write(packet.toList(), withResponse: false);
     // ignore: avoid_print

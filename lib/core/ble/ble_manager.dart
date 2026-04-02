@@ -342,7 +342,9 @@ class BleManager {
 
       // ignore: avoid_print
       print('[BleManager] Bondingトリガー: fdab/0002 をread中...');
-      await _ble.readCharacteristic(pairingChar);
+      // 3秒でタイムアウト: Band 9がfdab/0002に応答しない場合に無限待機を防ぐ
+      await _ble.readCharacteristic(pairingChar)
+          .timeout(const Duration(seconds: 3));
       // ignore: avoid_print
       print('[BleManager] Bondingトリガー完了（bond済みまたはペアリング成功）');
 

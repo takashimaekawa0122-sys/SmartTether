@@ -218,6 +218,7 @@ class BandAuthenticator {
     // ステートマシンフラグ
     bool sessionConfigDone = false;
     SessionKeys? pendingKeys;
+    Uint8List? savedWatchNonce; // CMD_NONCE再送時のCMD_AUTH再試行用
 
     // Step 0: Characteristic.subscribe() で直接 Notify をサブスクライブ
     // QualifiedCharacteristic 経由ではなく、実際のオブジェクトを使う
@@ -284,54 +285,71 @@ class BandAuthenticator {
 
               if (type != AuthCommands.authTypeV2) return;
 
-              if (subType == AuthCommands.cmdNonce && pendingKeys == null) {
-                final watchNonce = parsed['watchNonce'] as Uint8List?;
-                final watchHmac = parsed['watchHmac'] as Uint8List?;
+              if (subType == AuthCommands.cmdNonce) {
+                if (pendingKeys == null) {
+                  // 初回: watchNonce+watchHmac を受信し、鍵を導出してCMD_AUTHを送信
+                  final watchNonce = parsed['watchNonce'] as Uint8List?;
+                  final watchHmac = parsed['watchHmac'] as Uint8List?;
 
-                if (watchNonce == null || watchHmac == null) {
-                  diagLog.add('${ts()} [ERROR] CMD_NONCE応答にnonce/hmacなし');
-                  completer.complete(
-                    AuthFailure('CMD_NONCE応答: watchNonce/watchHmacが取得できません\n\n── 診断ログ ──\n${diagLog.join('\n')}'),
+                  if (watchNonce == null || watchHmac == null) {
+                    diagLog.add('${ts()} [ERROR] CMD_NONCE応答にnonce/hmacなし');
+                    completer.complete(
+                      AuthFailure('CMD_NONCE応答: watchNonce/watchHmacが取得できません\n\n── 診断ログ ──\n${diagLog.join('\n')}'),
+                    );
+                    return;
+                  }
+                  if (watchNonce.length != 16 || watchHmac.length != 32) {
+                    diagLog.add('${ts()} [ERROR] データ長不正 nonce=${watchNonce.length} hmac=${watchHmac.length}');
+                    completer.complete(
+                      AuthFailure('CMD_NONCE応答のデータ長不正: nonce=${watchNonce.length} hmac=${watchHmac.length}\n\n── 診断ログ ──\n${diagLog.join('\n')}'),
+                    );
+                    return;
+                  }
+
+                  diagLog.add('${ts()} [OK] watchNonce(${watchNonce.length}B)+watchHmac(${watchHmac.length}B)受信 → 鍵導出...');
+                  final keys = _deriveSessionKeys(
+                    authKey: authKey,
+                    phoneNonce: phoneNonce,
+                    watchNonce: watchNonce,
                   );
-                  return;
-                }
-                if (watchNonce.length != 16 || watchHmac.length != 32) {
-                  diagLog.add('${ts()} [ERROR] データ長不正 nonce=${watchNonce.length} hmac=${watchHmac.length}');
-                  completer.complete(
-                    AuthFailure('CMD_NONCE応答のデータ長不正: nonce=${watchNonce.length} hmac=${watchHmac.length}\n\n── 診断ログ ──\n${diagLog.join('\n')}'),
+                  pendingKeys = keys;
+                  savedWatchNonce = watchNonce; // 再送時のために保存
+
+                  final expected = _hmacSha256(
+                    key: keys.decryptionKey,
+                    message: Uint8List.fromList([...watchNonce, ...phoneNonce]),
                   );
-                  return;
+
+                  if (!_constantTimeEqual(expected, watchHmac)) {
+                    diagLog.add('${ts()} [ERROR] watchHmac検証失敗（Auth Key不正の可能性）');
+                    completer.complete(const AuthFailure(
+                      'watchHmac 検証失敗（Auth Keyが間違っている可能性があります）',
+                    ));
+                    return;
+                  }
+
+                  diagLog.add('${ts()} [OK] watchHmac検証成功 → CMD_AUTH送信...');
+                  await _sendAuthCommand(
+                    txChar: txCharObj!,
+                    encryptionKey: keys.encryptionKey,
+                    phoneNonce: phoneNonce,
+                    watchNonce: watchNonce,
+                  );
+                  diagLog.add('${ts()} [OK] CMD_AUTH送信完了 → 認証結果待ち');
+                } else {
+                  // Band が CMD_NONCE を再送してきた = CMD_AUTH が届いていない
+                  // write-without-response はパケットロストがあるため再送する
+                  diagLog.add('${ts()} [RETRY] CMD_NONCE再送受信 → CMD_AUTH再送...');
+                  // ignore: avoid_print
+                  print('[Auth] CMD_NONCE再送受信 → CMD_AUTH再送');
+                  await _sendAuthCommand(
+                    txChar: txCharObj!,
+                    encryptionKey: pendingKeys!.encryptionKey,
+                    phoneNonce: phoneNonce,
+                    watchNonce: savedWatchNonce!,
+                  );
+                  diagLog.add('${ts()} [RETRY] CMD_AUTH再送完了 → 認証結果待ち');
                 }
-
-                diagLog.add('${ts()} [OK] watchNonce(${watchNonce.length}B)+watchHmac(${watchHmac.length}B)受信 → 鍵導出...');
-                final keys = _deriveSessionKeys(
-                  authKey: authKey,
-                  phoneNonce: phoneNonce,
-                  watchNonce: watchNonce,
-                );
-                pendingKeys = keys;
-
-                final expected = _hmacSha256(
-                  key: keys.decryptionKey,
-                  message: Uint8List.fromList([...watchNonce, ...phoneNonce]),
-                );
-
-                if (!_constantTimeEqual(expected, watchHmac)) {
-                  diagLog.add('${ts()} [ERROR] watchHmac検証失敗（Auth Key不正の可能性）');
-                  completer.complete(const AuthFailure(
-                    'watchHmac 検証失敗（Auth Keyが間違っている可能性があります）',
-                  ));
-                  return;
-                }
-
-                diagLog.add('${ts()} [OK] watchHmac検証成功 → CMD_AUTH送信...');
-                await _sendAuthCommand(
-                  txChar: txCharObj!,
-                  encryptionKey: keys.encryptionKey,
-                  phoneNonce: phoneNonce,
-                  watchNonce: watchNonce,
-                );
-                diagLog.add('${ts()} [OK] CMD_AUTH送信完了 → 認証結果待ち');
               } else if (subType == AuthCommands.cmdAuth &&
                   pendingKeys != null) {
                 final status = parsed['status'] as int? ?? -1;
@@ -470,9 +488,10 @@ class BandAuthenticator {
       message: Uint8List.fromList([...phoneNonce, ...watchNonce]),
     );
 
+    // AuthStep3: phoneHmac のみ（field 1）
+    // Gadgetbridgeに倣い、不要な空フィールドは含めない
     final authStep3Msg = <int>[
       ..._protoBytes(field: 1, value: phoneHmac),
-      ..._protoBytes(field: 2, value: Uint8List(0)),
     ];
     final authMsg = _protoMessage(field: 32, value: authStep3Msg);
     final commandData = <int>[

@@ -558,27 +558,27 @@ class BandAuthenticator {
     ];
 
     // AES-CCM でデバイス情報を暗号化する
-    // Gadgetbridge: encrypt(authDeviceInfo.toByteArray(), 0)
-    //   -> encrypt(encryptionKey, packetNonce(encryptionNonce + 0 + 0), payload)
+    // 試行: decryptionKey + decryptionNonce を使用（status=7の原因調査）
     final encNonce = Uint8List(12);
-    encNonce.setRange(0, 4, keys.encryptionNonce);
+    encNonce.setRange(0, 4, keys.decryptionNonce);
     // bytes 4-11: all zeros (packetId=0)
 
     diagLog.add('[DBG] authDeviceInfo(${authDeviceInfo.length}B): ${authDeviceInfo.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
     diagLog.add('[DBG] CCM nonce: ${encNonce.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
 
     final encryptedDeviceInfo = encryptAesCcm(
-      key: keys.encryptionKey,
+      key: keys.decryptionKey,
       nonce: encNonce,
       plaintext: Uint8List.fromList(authDeviceInfo),
     );
 
     diagLog.add('[DBG] encryptedDeviceInfo: ${encryptedDeviceInfo == null ? "null (CCM失敗!)" : "${encryptedDeviceInfo.length}B: ${encryptedDeviceInfo.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}"}');
 
-    // AuthStep3: encryptedNonces(field 1) のみ送信（deviceInfo診断用）
-    // TODO: status=0確認後、encryptedDeviceInfoを復活させる
+    // AuthStep3: encryptedNonces(field 1) + encryptedDeviceInfo(field 2)
     final authStep3Msg = <int>[
       ..._protoBytes(field: 1, value: encryptedNonces),
+      if (encryptedDeviceInfo != null)
+        ..._protoBytes(field: 2, value: encryptedDeviceInfo),
     ];
     final authMsg = _protoMessage(field: 32, value: authStep3Msg);
     final commandData = <int>[

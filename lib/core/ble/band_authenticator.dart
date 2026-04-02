@@ -240,7 +240,7 @@ class BandAuthenticator {
         .listen(
           (data) async {
             final hex = data.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
-            diagLog.add('${ts()} [RECV] ${data.length}バイト: $hex');
+            diagLog.add('${ts()} [RECV] ${data.length}B');
             // ignore: avoid_print
             print('[Auth] BLE受信 ${data.length}バイト raw=$hex');
             if (data.isEmpty || completer.isCompleted) return;
@@ -562,16 +562,13 @@ class BandAuthenticator {
     encNonce.setRange(0, 4, keys.encryptionNonce);
     // bytes 4-11: all zeros (packetId=0)
 
-    diagLog.add('[DBG] authDeviceInfo(${authDeviceInfo.length}B): ${authDeviceInfo.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
-    diagLog.add('[DBG] CCM nonce: ${encNonce.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
-
     final encryptedDeviceInfo = encryptAesCcm(
       key: keys.encryptionKey,
       nonce: encNonce,
       plaintext: Uint8List.fromList(authDeviceInfo),
     );
 
-    diagLog.add('[DBG] encryptedDeviceInfo: ${encryptedDeviceInfo == null ? "null (CCM失敗!)" : "${encryptedDeviceInfo.length}B: ${encryptedDeviceInfo.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}"}');
+    diagLog.add('[DBG] CCM: nonce=${encNonce.map((b) => b.toRadixString(16).padLeft(2, '0')).join()} devInfo=${encryptedDeviceInfo == null ? "null!" : "${encryptedDeviceInfo.length}B"}');
 
     // AuthStep3: encryptedNonces(field 1) + encryptedDeviceInfo(field 2)
     final authStep3Msg = <int>[
@@ -594,7 +591,7 @@ class BandAuthenticator {
       sequence: seq,
     );
 
-    diagLog.add('[DBG] CMD_AUTH packet(${packet.length}B): ${packet.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+    diagLog.add('[DBG] AUTH pkt ${packet.length}B sent');
     await txChar.write(packet.toList(), withResponse: false);
   }
 

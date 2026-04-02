@@ -550,8 +550,8 @@ class BandAuthenticator {
     final apiLevel = Platform.isIOS ? 17 : 33; // iOS 17 / Android 13 相当
     const region = 'JP';
     final authDeviceInfo = <int>[
-      ..._protoVarint(field: 1, value: 0),           // unknown1 = 0
-      ..._protoVarint(field: 2, value: apiLevel),     // phoneApiLevel
+      ..._protoVarint(field: 1, value: 0),            // unknown1 = 0
+      ..._protoFloat(field: 2, value: apiLevel),      // phoneApiLevel (float型: wire type 5)
       ..._protoString(field: 3, value: deviceName),   // phoneName
       ..._protoVarint(field: 4, value: 224),          // unknown3 = 224
       ..._protoString(field: 5, value: region),       // region
@@ -790,6 +790,20 @@ class BandAuthenticator {
   List<int> _protoString({required int field, required String value}) {
     final bytes = Uint8List.fromList(value.codeUnits);
     return _protoBytes(field: field, value: bytes);
+  }
+
+  /// Protobuf float フィールドをエンコードする
+  ///
+  /// wire type 5: 32-bit（float/fixed32/sfixed32）
+  /// IEEE 754 single precision, little-endian
+  List<int> _protoFloat({required int field, required int value}) {
+    final tag = (field << 3) | 5; // wire type 5 = 32-bit
+    final result = <int>[];
+    result.addAll(_encodeVarint(tag));
+    final bd = ByteData(4);
+    bd.setFloat32(0, value.toDouble(), Endian.little);
+    result.addAll(bd.buffer.asUint8List());
+    return result;
   }
 
   /// Protobuf embedded message フィールドをエンコードする

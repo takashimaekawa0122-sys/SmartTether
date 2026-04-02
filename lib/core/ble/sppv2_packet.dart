@@ -98,6 +98,20 @@ class Sppv2Packet {
     );
   }
 
+  /// ACKパケットを組み立てる
+  ///
+  /// 受信したDATAパケットに対して、同じシーケンス番号でACKを返す。
+  /// Gadgetbridge: XiaomiSppProtocolV2.sendAck(sequenceNumber)
+  ///
+  /// ACKパケットはペイロードを持たない（ヘッダーのみ）。
+  static Uint8List buildAck({required int sequence}) {
+    return _buildFrame(
+      frameType: Sppv2FrameType.ack,
+      sequence: sequence,
+      payload: Uint8List(0),
+    );
+  }
+
   /// コマンドパケットを組み立てる
   ///
   /// [channelId]   チャンネルID (例: Sppv2Channel.auth)

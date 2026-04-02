@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -85,6 +86,12 @@ class BandAuthenticator {
   final FlutterReactiveBle _ble;
   final _random = Random.secure();
 
+  /// SPPv2 送信パケットのシーケンス番号カウンター
+  ///
+  /// Gadgetbridge: XiaomiSppProtocolV2.packetSequenceCounter
+  /// 各送信パケットごとにインクリメントし、認証セッション開始時にリセットする。
+  int _sendSequence = 0;
+
   BandAuthenticator(this._ble);
 
   /// Band 9 との V2認証を行い、SessionKeys を含む AuthResult を返す
@@ -144,6 +151,9 @@ class BandAuthenticator {
     if (authKey == null) {
       return const AuthFailure('Auth Keyの形式が不正です（32文字HEX文字列が必要）');
     }
+
+    // シーケンス番号をリセット（新しい認証セッション）
+    _sendSequence = 0;
 
     diagLog.add('${ts()} [START] 認証開始 device=$deviceId');
 
@@ -260,6 +270,24 @@ class BandAuthenticator {
                 return;
               }
 
+              // --- DATAパケットに対してACKを返す ---
+              // Gadgetbridge: XiaomiSppProtocolV2.processPacket() の sendAck() に相当。
+              // ACKを返さないと Band は前のパケットが届いていないと判断し、
+              // CMD_NONCE を繰り返し再送する。
+              if (packet.frameType == Sppv2FrameType.command) {
+                final ackPacket = Sppv2Packet.buildAck(sequence: packet.sequence);
+                diagLog.add('${ts()} [ACK] seq=${packet.sequence} に ACK送信');
+                // ignore: avoid_print
+                print('[Auth] ACK送信 seq=${packet.sequence}');
+                try {
+                  await txCharObj!.write(ackPacket.toList(), withResponse: false);
+                } catch (e) {
+                  diagLog.add('${ts()} [WARN] ACK送信失敗: $e');
+                  // ignore: avoid_print
+                  print('[Auth] ACK送信失敗: $e');
+                }
+              }
+
               // --- 認証チャンネルのレスポンス処理 ---
               if (packet.channelId != Sppv2Channel.auth) {
                 diagLog.add('${ts()} [SKIP] authチャンネル以外: channel=0x${packet.channelId.toRadixString(16)}');
@@ -334,6 +362,7 @@ class BandAuthenticator {
                     encryptionKey: keys.encryptionKey,
                     phoneNonce: phoneNonce,
                     watchNonce: watchNonce,
+                    keys: keys,
                   );
                   diagLog.add('${ts()} [OK] CMD_AUTH送信完了 → 認証結果待ち');
                 } else {
@@ -347,6 +376,7 @@ class BandAuthenticator {
                     encryptionKey: pendingKeys!.encryptionKey,
                     phoneNonce: phoneNonce,
                     watchNonce: savedWatchNonce!,
+                    keys: pendingKeys!,
                   );
                   diagLog.add('${ts()} [RETRY] CMD_AUTH再送完了 → 認証結果待ち');
                 }
@@ -432,8 +462,8 @@ class BandAuthenticator {
 
   /// SESSION_CONFIG リクエストを送信する（Characteristic オブジェクト版）
   ///
-  /// Gadgetbridge の initializeDevice() が行う最初のパケット送信。
-  /// write(withResponse: true) で送達確認付きで送信する。
+  /// Gadgetbridge の initializeSession() が行う最初のパケット送信。
+  /// SESSION_CONFIG はシーケンス番号0で送信する（Gadgetbridge準拠）。
   Future<void> _sendSessionConfigRequest({
     required Characteristic txChar,
   }) async {
@@ -451,6 +481,9 @@ class BandAuthenticator {
   // ----------------------------------------------------------------
 
   /// CMD_NONCE コマンドを送信する（Characteristic オブジェクト版）
+  ///
+  /// Gadgetbridge: XiaomiAuthService.startEncryptedHandshake() -> sendCommand("auth step 1")
+  /// シーケンス番号は packetSequenceCounter からインクリメント取得する。
   Future<void> _sendNonceCommand({
     required Characteristic txChar,
     required Uint8List phoneNonce,
@@ -463,12 +496,16 @@ class BandAuthenticator {
       ..._protoMessage(field: 3, value: authMsg),
     ];
 
+    final seq = _sendSequence++;
     final packet = Sppv2Packet.buildCommand(
       channelId: Sppv2Channel.auth,
       payloadType: Sppv2PayloadType.plaintext,
       data: commandData,
+      sequence: seq,
     );
 
+    // ignore: avoid_print
+    print('[Auth] CMD_NONCE送信 seq=$seq');
     await txChar.write(packet.toList(), withResponse: false);
   }
 
@@ -477,21 +514,63 @@ class BandAuthenticator {
   // ----------------------------------------------------------------
 
   /// CMD_AUTH コマンドを送信する（Characteristic オブジェクト版）
+  ///
+  /// Gadgetbridge: XiaomiAuthService.handleWatchNonce() -> sendCommand("auth step 2")
+  ///
+  /// AuthStep3 Protobuf 構造 (Gadgetbridge XiaomiProto.AuthStep3):
+  ///   field 1: encryptedNonces = HMAC-SHA256(key=encryptionKey, msg=phoneNonce+watchNonce)
+  ///   field 2: encryptedDeviceInfo = AES-CCM暗号化されたデバイス情報
+  ///
+  /// AuthDeviceInfo Protobuf 構造:
+  ///   field 1: unknown1 = 0
+  ///   field 2: phoneApiLevel (int)
+  ///   field 3: phoneName (string)
+  ///   field 4: unknown3 = 224
+  ///   field 5: region (string, e.g. "JP")
   Future<void> _sendAuthCommand({
     required Characteristic txChar,
     required Uint8List encryptionKey,
     required Uint8List phoneNonce,
     required Uint8List watchNonce,
+    required SessionKeys keys,
   }) async {
-    final phoneHmac = _hmacSha256(
+    // encryptedNonces = HMAC-SHA256(key=encryptionKey, msg=phoneNonce+watchNonce)
+    final encryptedNonces = _hmacSha256(
       key: encryptionKey,
       message: Uint8List.fromList([...phoneNonce, ...watchNonce]),
     );
 
-    // AuthStep3: phoneHmac のみ（field 1）
-    // Gadgetbridgeに倣い、不要な空フィールドは含めない
+    // AuthDeviceInfo Protobuf を組み立てる
+    // Gadgetbridge: XiaomiProto.AuthDeviceInfo
+    final deviceName = Platform.isIOS ? 'iPhone' : 'Android';
+    final apiLevel = Platform.isIOS ? 17 : 33; // iOS 17 / Android 13 相当
+    const region = 'JP';
+    final authDeviceInfo = <int>[
+      ..._protoVarint(field: 1, value: 0),           // unknown1 = 0
+      ..._protoVarint(field: 2, value: apiLevel),     // phoneApiLevel
+      ..._protoString(field: 3, value: deviceName),   // phoneName
+      ..._protoVarint(field: 4, value: 224),          // unknown3 = 224
+      ..._protoString(field: 5, value: region),       // region
+    ];
+
+    // AES-CCM でデバイス情報を暗号化する
+    // Gadgetbridge: encrypt(authDeviceInfo.toByteArray(), 0)
+    //   -> encrypt(encryptionKey, packetNonce(encryptionNonce + 0 + 0), payload)
+    final encryptionNonce = Uint8List(12);
+    encryptionNonce.setRange(0, 4, keys.encryptionNonce);
+    // bytes 4-11: all zeros (packetId=0)
+
+    final encryptedDeviceInfo = encryptAesCcm(
+      key: keys.encryptionKey,
+      nonce: encryptionNonce,
+      plaintext: Uint8List.fromList(authDeviceInfo),
+    );
+
+    // AuthStep3: encryptedNonces(field 1) + encryptedDeviceInfo(field 2)
     final authStep3Msg = <int>[
-      ..._protoBytes(field: 1, value: phoneHmac),
+      ..._protoBytes(field: 1, value: encryptedNonces),
+      if (encryptedDeviceInfo != null)
+        ..._protoBytes(field: 2, value: encryptedDeviceInfo),
     ];
     final authMsg = _protoMessage(field: 32, value: authStep3Msg);
     final commandData = <int>[
@@ -500,12 +579,16 @@ class BandAuthenticator {
       ..._protoMessage(field: 3, value: authMsg),
     ];
 
+    final seq = _sendSequence++;
     final packet = Sppv2Packet.buildCommand(
       channelId: Sppv2Channel.auth,
       payloadType: Sppv2PayloadType.plaintext,
       data: commandData,
+      sequence: seq,
     );
 
+    // ignore: avoid_print
+    print('[Auth] CMD_AUTH送信 seq=$seq encDevInfo=${encryptedDeviceInfo != null ? "${encryptedDeviceInfo.length}B" : "null"}');
     await txChar.write(packet.toList(), withResponse: false);
   }
 
@@ -691,6 +774,14 @@ class BandAuthenticator {
     result.addAll(_encodeVarint(value.length));
     result.addAll(value);
     return result;
+  }
+
+  /// Protobuf string フィールドをエンコードする
+  ///
+  /// wire type 2: length-delimited（stringもbytesと同じwire type）
+  List<int> _protoString({required int field, required String value}) {
+    final bytes = Uint8List.fromList(value.codeUnits);
+    return _protoBytes(field: field, value: bytes);
   }
 
   /// Protobuf embedded message フィールドをエンコードする

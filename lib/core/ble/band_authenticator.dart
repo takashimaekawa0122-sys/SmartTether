@@ -385,16 +385,10 @@ class BandAuthenticator {
               } else if (subType == AuthCommands.cmdAuth &&
                   pendingKeys != null) {
                 diagLog.add('[DBG] AUTH resp raw=${rawData.map((b) => b.toRadixString(16).padLeft(2, "0")).join()}');
-                final status = parsed['status'] as int? ?? -1;
-                if (status == 0) {
-                  diagLog.add('${ts()} [SUCCESS] 認証成功 (status=0)');
-                  completer.complete(AuthSuccess(pendingKeys!));
-                } else {
-                  diagLog.add('${ts()} [ERROR] CMD_AUTH失敗 status=$status');
-                  completer.complete(
-                    AuthFailure('CMD_AUTH 認証失敗（status: $status）\n\n── 診断ログ ──\n${diagLog.join('\n')}'),
-                  );
-                }
+                // Gadgetbridge準拠: subtype=27が返ってきたら無条件で認証成功
+                // Auth.statusはfield 8だが、CMD_AUTH応答ではstatusチェック不要
+                diagLog.add('${ts()} [SUCCESS] 認証成功 (subtype=27受信)');
+                completer.complete(AuthSuccess(pendingKeys!));
               }
             } catch (e) {
               diagLog.add('${ts()} [ERROR] 受信処理例外: $e');
@@ -657,8 +651,11 @@ class BandAuthenticator {
             // Auth メッセージをネストデコード
             _parseProtoAuth(bytes, result);
           }
+        } else if (wireType == 1) {
+          pos += 8; // 64-bit: スキップ
+        } else if (wireType == 5) {
+          pos += 4; // 32-bit: スキップ
         } else {
-          // 未対応のwireTypeはスキップできないので終了
           break;
         }
       }
@@ -689,7 +686,7 @@ class BandAuthenticator {
         if (valResult == null) break;
         final val = valResult.$1;
         pos = valResult.$2;
-        if (fieldNumber == 3) result['status'] = val; // Auth.status (CMD_AUTH応答)
+        if (fieldNumber == 8) result['status'] = val; // Auth.status (field 8)
       } else if (wireType == 2) {
         final lenResult = _decodeVarint(data, pos);
         if (lenResult == null) break;

@@ -363,6 +363,7 @@ class BandAuthenticator {
                     phoneNonce: phoneNonce,
                     watchNonce: watchNonce,
                     keys: keys,
+                    diagLog: diagLog,
                   );
                   diagLog.add('${ts()} [OK] CMD_AUTH送信完了 → 認証結果待ち');
                 } else {
@@ -377,6 +378,7 @@ class BandAuthenticator {
                     phoneNonce: phoneNonce,
                     watchNonce: savedWatchNonce!,
                     keys: pendingKeys!,
+                    diagLog: diagLog,
                   );
                   diagLog.add('${ts()} [RETRY] CMD_AUTH再送完了 → 認証結果待ち');
                 }
@@ -533,6 +535,7 @@ class BandAuthenticator {
     required Uint8List phoneNonce,
     required Uint8List watchNonce,
     required SessionKeys keys,
+    required List<String> diagLog,
   }) async {
     // encryptedNonces = HMAC-SHA256(key=encryptionKey, msg=phoneNonce+watchNonce)
     final encryptedNonces = _hmacSha256(
@@ -560,12 +563,8 @@ class BandAuthenticator {
     encNonce.setRange(0, 4, keys.encryptionNonce);
     // bytes 4-11: all zeros (packetId=0)
 
-    // ignore: avoid_print
-    print('[Auth] authDeviceInfo(${authDeviceInfo.length}B): ${authDeviceInfo.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
-    // ignore: avoid_print
-    print('[Auth] CCM encKey: ${keys.encryptionKey.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
-    // ignore: avoid_print
-    print('[Auth] CCM nonce: ${encNonce.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+    diagLog.add('[DBG] authDeviceInfo(${authDeviceInfo.length}B): ${authDeviceInfo.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
+    diagLog.add('[DBG] CCM nonce: ${encNonce.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
 
     final encryptedDeviceInfo = encryptAesCcm(
       key: keys.encryptionKey,
@@ -573,8 +572,7 @@ class BandAuthenticator {
       plaintext: Uint8List.fromList(authDeviceInfo),
     );
 
-    // ignore: avoid_print
-    print('[Auth] encryptedDeviceInfo: ${encryptedDeviceInfo == null ? "null (CCM失敗!)" : "${encryptedDeviceInfo.length}B: ${encryptedDeviceInfo.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}"}');
+    diagLog.add('[DBG] encryptedDeviceInfo: ${encryptedDeviceInfo == null ? "null (CCM失敗!)" : "${encryptedDeviceInfo.length}B: ${encryptedDeviceInfo.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}"}');
 
     // AuthStep3: encryptedNonces(field 1) + encryptedDeviceInfo(field 2)
     final authStep3Msg = <int>[

@@ -322,18 +322,16 @@ class BandAuthenticator {
       // ignore: avoid_print
       print('[Auth] SESSION_CONFIG 送信完了 → Bandの応答を待機中...');
 
-      // SESSION_CONFIG応答がない場合のフォールバック:
-      // 5秒待ってもSESSION_CONFIG応答がなければ、直接CMD_NONCEを送信してみる。
-      Future<void>.delayed(const Duration(seconds: 5), () async {
+      // SESSION_CONFIG無応答フォールバック:
+      // 5秒待っても応答がなければ認証失敗として completer を完了させる。
+      // （CMD_NONCEを直接送っても Band 9 が無視するため、切断→再接続に任せる）
+      Future<void>.delayed(const Duration(seconds: 5), () {
         if (!completer.isCompleted && !sessionConfigDone) {
           // ignore: avoid_print
-          print('[Auth] SESSION_CONFIG応答なし（5秒経過）→ CMD_NONCEを直接送信');
-          try {
-            await _sendNonceCommand(txChar: txCharObj!, phoneNonce: phoneNonce);
-          } catch (e) {
-            // ignore: avoid_print
-            print('[Auth] CMD_NONCE直接送信失敗: $e');
-          }
+          print('[Auth] SESSION_CONFIG応答なし（5秒経過）→ 認証失敗として終了し再接続へ');
+          completer.complete(
+            const AuthFailure('SESSION_CONFIG無応答（5秒）: Band 9が応答しません。Mi Fitnessが干渉している可能性があります'),
+          );
         }
       });
 
@@ -358,8 +356,8 @@ class BandAuthenticator {
   }) async {
     final packet = Sppv2Packet.buildSessionConfig(sequence: 0);
     // ignore: avoid_print
-    print('[Auth] SESSION_CONFIG writeWithResponse送信中 (${packet.length}バイト)...');
-    await txChar.write(packet.toList(), withResponse: false);
+    print('[Auth] SESSION_CONFIG writeWithResponse=true送信中 (${packet.length}バイト)...');
+    await txChar.write(packet.toList(), withResponse: true);
     // ignore: avoid_print
     print('[Auth] SESSION_CONFIG write完了');
   }

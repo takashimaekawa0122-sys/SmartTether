@@ -575,11 +575,10 @@ class BandAuthenticator {
 
     diagLog.add('[DBG] encryptedDeviceInfo: ${encryptedDeviceInfo == null ? "null (CCM失敗!)" : "${encryptedDeviceInfo.length}B: ${encryptedDeviceInfo.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}"}');
 
-    // AuthStep3: encryptedNonces(field 1) + encryptedDeviceInfo(field 2)
+    // AuthStep3: encryptedNonces(field 1) のみ送信（deviceInfo診断用）
+    // TODO: status=0確認後、encryptedDeviceInfoを復活させる
     final authStep3Msg = <int>[
       ..._protoBytes(field: 1, value: encryptedNonces),
-      if (encryptedDeviceInfo != null)
-        ..._protoBytes(field: 2, value: encryptedDeviceInfo),
     ];
     final authMsg = _protoMessage(field: 32, value: authStep3Msg);
     final commandData = <int>[

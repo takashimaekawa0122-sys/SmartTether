@@ -294,7 +294,11 @@ class BleManager {
                   _rssiSmoother.reset();
                   if (completer != null) {
                     // completer がまだ生きている = 初回接続が完了していない
-                    safeComplete(const BleFailure('接続が切断されました'));
+                    final diagLog = _authenticator.lastDiagLog;
+                    final diagText = diagLog.isNotEmpty
+                        ? '\n\n── 診断ログ ──\n${diagLog.join('\n')}'
+                        : '';
+                    safeComplete(BleFailure('接続が切断されました$diagText'));
                   } else {
                     // 接続済み状態での切断 → 再接続
                     _updateState(BleConnectionState.disconnected);

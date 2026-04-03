@@ -94,6 +94,9 @@ class BandAuthenticator {
 
   BandAuthenticator(this._ble);
 
+  /// 認証中に蓄積された診断ログ（BLE切断競合時のデバッグ用）
+  List<String> lastDiagLog = [];
+
   /// Band 9 との V2認証を行い、SessionKeys を含む AuthResult を返す
   ///
   /// [deviceId]  : 接続済みデバイスのID（MACアドレス）
@@ -101,6 +104,7 @@ class BandAuthenticator {
   /// タイムアウトは30秒。
   Future<AuthResult> authenticateV2(String deviceId, String authKeyHex) async {
     final diagLog = <String>[];
+    lastDiagLog = diagLog; // BLE切断時でもdiagLogを参照できるよう保存
     final startTime = DateTime.now();
 
     String diagTimestamp() {

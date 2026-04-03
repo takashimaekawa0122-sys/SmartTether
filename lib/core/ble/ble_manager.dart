@@ -312,7 +312,11 @@ class BleManager {
               // dispose 後の処理を防ぐ。
               if (_disposed) return;
               _updateState(BleConnectionState.error);
-              safeComplete(BleFailure('BLE接続エラー: $e'));
+              final diagLog = _authenticator.lastDiagLog;
+              final diagText = diagLog.isNotEmpty
+                  ? '\n\n── 診断ログ ──\n${diagLog.join('\n')}'
+                  : '';
+              safeComplete(BleFailure('BLE接続エラー: $e$diagText'));
             },
           );
 

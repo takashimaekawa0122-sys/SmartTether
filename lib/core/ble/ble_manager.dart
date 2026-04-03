@@ -109,7 +109,44 @@ class BleManager {
     _currentDeviceId = macAddress;
     _retryCount = 0;
     _disposed = false; // disconnect()後の再接続を可能にする
-    return _doConnect(macAddress, authKey);
+
+    // まず保存済みIDで接続を試みる
+    final firstResult = await _doConnect(macAddress, authKey);
+
+    // 接続が即切断（STEP1未到達）の場合、iOSのUUIDが古い可能性があるため
+    // スキャンして最新のデバイスIDを取得し直して再試行する
+    if (firstResult is BleFailure &&
+        firstResult.error.startsWith('接続が切断されました') &&
+        !firstResult.error.contains('STEP1')) {
+      // ignore: avoid_print
+      print('[BleManager] 即切断を検出。スキャンして最新IDで再試行します...');
+      try {
+        final freshDevice = await scanForBand9(
+          timeout: const Duration(seconds: 10),
+        ).firstWhere(
+          (d) => d.name.toLowerCase().contains('band') ||
+              d.name.toLowerCase().contains('mi'),
+          orElse: () => throw Exception('Band 9が見つかりません'),
+        );
+        if (_disposed) return firstResult;
+        final freshId = freshDevice.id;
+        // ignore: avoid_print
+        print('[BleManager] 新しいdeviceId=$freshId で再接続します');
+        _currentDeviceId = freshId;
+        await AppSecrets.saveBandMacAddress(freshId); // 最新IDを保存
+        return _doConnect(freshId, authKey);
+      } catch (e) {
+        // ignore: avoid_print
+        print('[BleManager] スキャン再試行失敗: $e');
+        return BleFailure(
+          '${firstResult.error}\n\n'
+          '【自動再スキャンも失敗】$e\n'
+          '→ 設定画面でBand 9を再スキャンしてください',
+        );
+      }
+    }
+
+    return firstResult;
   }
 
   /// 切断する
@@ -225,8 +262,14 @@ class BleManager {
       print('[BleManager] $msg');
     }
 
+    clog('deviceId=$deviceId');
+
     try {
       await _connectionSubscription?.cancel();
+      _connectionSubscription = null;
+      // iOSのBLEスタックが前の接続をクリーンアップする時間を確保
+      // （cancel直後に再接続するとconnectedを経由せずdisconnectedになる問題を防ぐ）
+      await Future<void>.delayed(const Duration(milliseconds: 500));
 
       // [H-3] completer を null 化することで、disconnected と onError が
       // 同時に来た場合の二重 complete を防ぐ。

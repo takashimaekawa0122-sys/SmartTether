@@ -143,10 +143,19 @@ class _TimelinePageState extends ConsumerState<TimelinePage> {
       // BLE接続開始
       final result = await ref.read(bleManagerProvider).connect();
       if (result is BleFailure && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('BLE接続エラー: ${result.error}'),
-            backgroundColor: const Color(0xFFFF6B6B),
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('BLE接続エラー'),
+            content: SingleChildScrollView(
+              child: SelectableText(result.error),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('閉じる'),
+              ),
+            ],
           ),
         );
       }

@@ -217,6 +217,14 @@ class BleManager {
       String deviceId, String authKey) async {
     _updateState(BleConnectionState.connecting);
 
+    // 接続フロー診断ログ（MTU・Bonding・認証の各ステップを記録）
+    final connectLog = <String>[];
+    void clog(String msg) {
+      connectLog.add(msg);
+      // ignore: avoid_print
+      print('[BleManager] $msg');
+    }
+
     try {
       await _connectionSubscription?.cancel();
 
@@ -247,6 +255,7 @@ class BleManager {
               switch (update.connectionState) {
                 case DeviceConnectionState.connected:
                   _updateState(BleConnectionState.authenticating);
+                  clog('STEP1: BLE接続確立');
 
                   // MTU 512 をリクエストする（Gadgetbridge: requestMtu(512) と同一）
                   // デフォルトMTU(23)のままだとSPPv2パケットが断片化して認証失敗になる。
@@ -255,38 +264,33 @@ class BleManager {
                       deviceId: deviceId,
                       mtu: 512,
                     );
-                    // ignore: avoid_print
-                    print('[BleManager] MTUネゴシエーション完了: $negotiatedMtu バイト');
+                    clog('STEP2: MTU=$negotiatedMtu');
                   } catch (e) {
                     // MTU失敗は致命的ではない（デフォルトMTUで継続）
-                    // ignore: avoid_print
-                    print('[BleManager] MTUリクエスト失敗（デフォルトで継続）: $e');
+                    clog('STEP2: MTU失敗（続行）: $e');
                   }
 
                   // BLE Bondingをトリガーする（Gadgetbridge: createBond() 相当）
+                  clog('STEP3: Bonding開始');
                   await _triggerBonding(deviceId);
+                  clog('STEP4: Bonding完了');
 
                   // V2プロトコル（HMAC-SHA256 + AES-CCM）で認証を実行する
-                  // 認証内部でgetDiscoveredServices()からCharacteristicオブジェクトを
-                  // 取得して使用する（UUID解決の問題を回避）
+                  clog('STEP5: authenticateV2開始');
                   final authResult =
                       await _authenticator.authenticateV2(deviceId, authKey);
 
                   if (authResult is AuthFailure) {
-                    // ignore: avoid_print
-                    print('[BleManager] 認証失敗: ${authResult.error}');
+                    clog('STEP6: 認証失敗');
                     _updateState(BleConnectionState.error);
                     safeComplete(BleFailure('認証失敗: ${authResult.error}'));
                     return;
                   }
 
+                  clog('STEP6: 認証成功');
                   _retryCount = 0;
                   _updateState(BleConnectionState.connected);
                   _startRssiPolling(deviceId);
-
-                  // ignore: avoid_print
-                  print('[BleManager] V2認証完了・RSSI監視開始');
-
                   safeComplete(const BleSuccess(null));
 
                 case DeviceConnectionState.disconnected:
@@ -294,9 +298,10 @@ class BleManager {
                   _rssiSmoother.reset();
                   if (completer != null) {
                     // completer がまだ生きている = 初回接続が完了していない
-                    final diagLog = _authenticator.lastDiagLog;
-                    final diagText = diagLog.isNotEmpty
-                        ? '\n\n── 診断ログ ──\n${diagLog.join('\n')}'
+                    final authLog = _authenticator.lastDiagLog;
+                    final allLog = [...connectLog, ...authLog];
+                    final diagText = allLog.isNotEmpty
+                        ? '\n\n── 診断ログ ──\n${allLog.join('\n')}'
                         : '';
                     safeComplete(BleFailure('接続が切断されました$diagText'));
                   } else {
@@ -316,9 +321,10 @@ class BleManager {
               // dispose 後の処理を防ぐ。
               if (_disposed) return;
               _updateState(BleConnectionState.error);
-              final diagLog = _authenticator.lastDiagLog;
-              final diagText = diagLog.isNotEmpty
-                  ? '\n\n── 診断ログ ──\n${diagLog.join('\n')}'
+              final authLog = _authenticator.lastDiagLog;
+              final allLog = [...connectLog, ...authLog];
+              final diagText = allLog.isNotEmpty
+                  ? '\n\n── 診断ログ ──\n${allLog.join('\n')}'
                   : '';
               safeComplete(BleFailure('BLE接続エラー: $e$diagText'));
             },

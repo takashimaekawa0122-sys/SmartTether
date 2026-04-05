@@ -1,17 +1,39 @@
-# smart_tether
+# Smart Tether
 
-A new Flutter project.
+Xiaomi Smart Band 9 のコンパニオンアプリ（iPhone向け）。
+Mi Fitnessを完全に代替し、Band 9のすべての機能をこの1アプリで賄う。
 
-## Getting Started
+## 主な機能
 
-This project is a starting point for a Flutter application.
+| 機能 | 状態 |
+|---|---|
+| BLE認証（SPPv2） | 🔄 実装中 |
+| 置き忘れ防止（RSSI監視） | 🔄 実装中 |
+| ステルス操作（ボイスメモ等） | 🔄 実装中 |
+| 時刻同期 | 📋 予定 |
+| 通知転送 | 📋 予定 |
+| 歩数・心拍表示 | 📋 予定 |
+| 天気送信 | 📋 予定 |
 
-A few resources to get you started if this is your first Flutter project:
+## セットアップ
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+### Auth Key の取得（初回のみ）
+1. Android端末に [Gadgetbridge](https://gadgetbridge.org/) をインストール
+2. Band 9をGadgetbridgeでペアリング
+3. デバイス設定からAuth Key（32文字HEX）を確認
+4. Smart Tetherの設定画面に入力
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### アプリの設定
+1. 設定画面でBand 9をスキャン → 選択
+2. Auth Keyを入力して保存
+3. メイン画面で「監視開始」
+
+## 技術スタック
+- Flutter（iOS / Android）
+- BLE: flutter_reactive_ble
+- 状態管理: Riverpod
+- 文字起こし: Avalon API（Whisper互換）
+- セキュリティ: flutter_secure_storage
+
+## 設計決定
+`docs/adr/` を参照。

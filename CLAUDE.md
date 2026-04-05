@@ -1,8 +1,23 @@
 # Smart Tether - Claude向け開発ガイド
 
 ## プロジェクト概要
-iPhoneとXiaomi Smart Band 9を連携させる「置き忘れ防止＋ステルス操作」アプリ。
+iPhoneとXiaomi Smart Band 9を連携させる**Band 9コンパニオンアプリ**。
+Mi Fitnessを完全に不要にし、Band 9のすべての機能をSmart Tether一本で賄う。
 個人使用目的。App Store非公開。
+
+### 実装する機能（優先順）
+1. **BLE認証（SPPv2）** ← 現在対応中。すべての機能の土台
+2. **置き忘れ防止**（RSSI監視・アラート）
+3. **ステルス操作**（Band 9ボタンでボイスメモ等を操作）
+4. **時刻同期**（接続時に自動）
+5. **通知転送**（電話・メッセージをBand 9に表示）
+6. **ヘルスデータ表示**（歩数・心拍をアプリ内で確認）
+7. **天気送信**（Band 9の天気表示を維持）
+
+### Mi Fitness不要化の方針
+- Band 9はSmart Tetherが常時接続を保持する
+- Mi Fitnessとの共存は**しない**（BLE排他制約のため）
+- Auth Keyの取得はAndroid + Gadgetbridgeで1回だけ実施
 
 ## アーキテクチャ
 → `.claude/agents/architect.md` を必ず最初に読むこと

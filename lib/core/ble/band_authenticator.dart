@@ -337,10 +337,11 @@ class BandAuthenticator {
                   final watchHmac = parsed['watchHmac'] as Uint8List?;
 
                   if (watchNonce == null || watchHmac == null) {
-                    diagLog.add('${ts()} [ERROR] CMD_NONCE応答にnonce/hmacなし');
-                    completer.complete(
-                      AuthFailure('CMD_NONCE応答: watchNonce/watchHmacが取得できません\n\n── 診断ログ ──\n${diagLog.join('\n')}'),
-                    );
+                    // nonce/hmacが含まれない場合は中間ACK/ステータスパケットの可能性がある。
+                    // 即エラー終了せず、本体パケットが来るまで待ち続ける。
+                    diagLog.add('${ts()} [SKIP] CMD_NONCE応答だがnonce/hmacなし（中間パケット）→ 本体待ち');
+                    // ignore: avoid_print
+                    print('[Auth] CMD_NONCE中間パケット受信（スキップして続行）');
                     return;
                   }
                   if (watchNonce.length != 16 || watchHmac.length != 32) {

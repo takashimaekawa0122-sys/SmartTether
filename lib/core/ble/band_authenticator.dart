@@ -173,32 +173,38 @@ class BandAuthenticator {
             const Duration(seconds: 10),
             onTimeout: () => throw TimeoutException('getDiscoveredServices タイムアウト（10秒）'),
           );
-      diagLog.add('${ts()} [DISC] サービス数=${services.length}');
+      // 全サービスUUIDを診断ログに記録（fe95が見つからない場合のデバッグ用）
+      final serviceIdList = services.map((s) => s.id.toString()).join(', ');
+      diagLog.add('${ts()} [DISC] サービス数=${services.length}: $serviceIdList');
       // ignore: avoid_print
-      print('[Auth] サービスディスカバリ: ${services.length}サービス検出');
+      print('[Auth] サービスディスカバリ: ${services.length}サービス検出: $serviceIdList');
 
-      // iOSのCoreBluetoothは短縮UUID（2バイト）で返す場合があるため、
-      // expanded（128ビット展開後）で比較する。
-      final fe95Uuid = Uuid.parse(BandServiceUUIDs.main).expanded;
-      final rxUuid = Uuid.parse(BandCharacteristicUUIDs.rxChannel).expanded;
-      final txUuid = Uuid.parse(BandCharacteristicUUIDs.txChannel).expanded;
+      // UUID比較: iOSはUUIDを大文字・短縮形・フルUUIDなど様々な形式で返す。
+      // expanded や文字列の完全一致は環境依存で失敗することがあるため、
+      // UUID文字列からダッシュを除いた16進数に 'fe95'/'005e'/'005f' が
+      // 含まれるかどうかで判定する（大文字小文字・フォーマット非依存）。
+      bool uuidContains(Uuid id, String shortHex) {
+        final normalized = id.toString().replaceAll('-', '').toLowerCase();
+        return normalized.contains(shortHex.toLowerCase());
+      }
 
       for (final service in services) {
         // ignore: avoid_print
-        print('[Auth] サービス: ${service.id} (expanded: ${service.id.expanded})');
-        if (service.id.expanded == fe95Uuid) {
+        print('[Auth] サービス: ${service.id}');
+        if (uuidContains(service.id, 'fe95')) {
           diagLog.add('${ts()} [DISC] fe95サービス発見 (char数=${service.characteristics.length})');
           // ignore: avoid_print
           print('[Auth] fe95サービス発見 (${service.characteristics.length}個のchar)');
           for (final char in service.characteristics) {
             // ignore: avoid_print
-            print('[Auth]   char: ${char.id} (expanded: ${char.id.expanded}) '
+            print('[Auth]   char: ${char.id} '
                 'notify=${char.isNotifiable} '
                 'writeNoResp=${char.isWritableWithoutResponse} '
                 'writeResp=${char.isWritableWithResponse}');
-            if (char.id.expanded == rxUuid) rxCharObj = char;
-            if (char.id.expanded == txUuid) txCharObj = char;
+            if (uuidContains(char.id, '005e')) rxCharObj = char;
+            if (uuidContains(char.id, '005f')) txCharObj = char;
           }
+          diagLog.add('${ts()} [DISC] char検索結果: rx=${rxCharObj != null} tx=${txCharObj != null}');
           break;
         }
       }

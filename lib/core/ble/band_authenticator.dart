@@ -168,7 +168,11 @@ class BandAuthenticator {
     Characteristic? rxCharObj;
     Characteristic? txCharObj;
     try {
-      final services = await _ble.getDiscoveredServices(deviceId);
+      final services = await _ble.getDiscoveredServices(deviceId)
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => throw TimeoutException('getDiscoveredServices タイムアウト（10秒）'),
+          );
       diagLog.add('${ts()} [DISC] サービス数=${services.length}');
       // ignore: avoid_print
       print('[Auth] サービスディスカバリ: ${services.length}サービス検出');

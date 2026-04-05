@@ -95,6 +95,21 @@ class BleManager {
   /// MACアドレス・Auth Key は AppSecrets から読み取る。
   /// 接続失敗時は [_connectWithRetry] で自動リトライする。
   Future<BleResult<void>> connect() async {
+    try {
+      return await _connectInternal().timeout(
+        const Duration(minutes: 2),
+        onTimeout: () {
+          _updateState(BleConnectionState.error);
+          return const BleFailure('接続タイムアウト（2分）: BLE接続が確立できませんでした\n→ 設定画面でBand 9を再スキャンしてください');
+        },
+      );
+    } catch (e) {
+      _updateState(BleConnectionState.error);
+      return BleFailure('接続エラー: $e');
+    }
+  }
+
+  Future<BleResult<void>> _connectInternal() async {
     final macAddress = await AppSecrets.getBandMacAddress();
     final authKey = await AppSecrets.getBandAuthKey();
 
@@ -274,7 +289,15 @@ class BleManager {
     clog('deviceId=$deviceId');
 
     try {
-      await _connectionSubscription?.cancel();
+      // cancel() 自体がiOSのBLEスタック詰まりでハングする場合があるため
+      // 5秒のタイムアウトを設ける（タイムアウト後は強制的に null 化して続行）
+      final cancelFuture = _connectionSubscription?.cancel();
+      if (cancelFuture != null) {
+        await cancelFuture.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {},
+        );
+      }
       _connectionSubscription = null;
       // iOSのBLEスタックが前の接続をクリーンアップする時間を確保
       // （cancel直後に再接続するとconnectedを経由せずdisconnectedになる問題を防ぐ）

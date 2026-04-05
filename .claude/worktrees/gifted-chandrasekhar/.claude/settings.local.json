@@ -5,7 +5,23 @@
       "Bash(flutter analyze:*)",
       "Bash(flutter clean:*)",
       "Bash(flutter pub:*)",
-      "Bash(flutter build:*)"
+      "Bash(flutter build:*)",
+      "Bash(sqlite3 \"/c/Users/takashi.maekawa/OneDrive/Desktop/gadgetbridge_20260405205700/database/Gadgetbridge\" \"SELECT NAME, EXTRA_INFO1 FROM GBDEVICE\")",
+      "Bash(python3 -c \":*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -s \"https://api.github.com/repos/Freeyourgadget/Gadgetbridge/contents/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiAuthService.java\")",
+      "Bash(python3 -c \"import sys,json,base64; d=json.load\\(sys.stdin\\); print\\(base64.b64decode\\(d[''''content'''']\\).decode\\(''''utf-8''''\\)\\)\")",
+      "Bash(curl -s \"https://api.github.com/repos/Freeyourgadget/Gadgetbridge/contents/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiConnectionSupport.java\")",
+      "Bash(curl -s \"https://api.github.com/repos/Freeyourgadget/Gadgetbridge/contents/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSupport.java\")",
+      "Bash(curl -s \"https://api.github.com/repos/Freeyourgadget/Gadgetbridge/contents/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiBleSupport.java\")",
+      "Bash(curl -s \"https://api.github.com/repos/Freeyourgadget/Gadgetbridge/contents/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiUuids.java\")",
+      "Bash(curl -s \"https://api.github.com/repos/Freeyourgadget/Gadgetbridge/contents/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppSupport.java\")",
+      "Bash(curl -s \"https://api.github.com/repos/Freeyourgadget/Gadgetbridge/contents/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppProtocolV2.java\")",
+      "Bash(curl -s \"https://api.github.com/repos/Freeyourgadget/Gadgetbridge/contents/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/xiaomi/XiaomiSppPacketV2.java\")",
+      "Bash(curl -s \"https://api.github.com/repos/Freeyourgadget/Gadgetbridge/contents/app/src/main/proto/xiaomi\")",
+      "Bash(curl -s \"https://api.github.com/repos/Freeyourgadget/Gadgetbridge/contents/app/src/main/proto\")",
+      "Bash(curl -s \"https://api.github.com/repos/Freeyourgadget/Gadgetbridge/contents/app/src/main/proto/xiaomi.proto\")"
     ]
   }
 }

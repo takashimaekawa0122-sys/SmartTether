@@ -131,11 +131,16 @@ class BleManager {
     // まず保存済みIDで接続を試みる
     final firstResult = await _doConnect(macAddress, authKey);
 
-    // 接続が即切断（STEP1未到達）の場合、iOSのUUIDが古い可能性があるため
-    // スキャンして最新のデバイスIDを取得し直して再試行する
-    if (firstResult is BleFailure &&
-        firstResult.error.startsWith('接続が切断されました') &&
-        !firstResult.error.contains('STEP1')) {
+    // 以下の2つのケースはどちらも「iOSの保存済みUUIDが失効して別デバイスに繋がった」を示す。
+    // → スキャンしてBand 9の最新UUIDを取得し直して再試行する。
+    //
+    // ケース1: 接続が即切断（STEP1未到達）→ UUIDが完全に無効
+    // ケース2: 接続後にfe95サービスが見つからない（[UUID失効]）→ 別デバイスに接続
+    final needsRescan = firstResult is BleFailure && (
+      (firstResult.error.startsWith('接続が切断されました') && !firstResult.error.contains('STEP1')) ||
+      firstResult.error.contains('[UUID失効]')
+    );
+    if (needsRescan) {
       // ignore: avoid_print
       print('[BleManager] 即切断を検出。スキャンして最新IDで再試行します...');
       try {

@@ -215,8 +215,11 @@ class BandAuthenticator {
 
     if (rxCharObj == null || txCharObj == null) {
       diagLog.add('${ts()} [ERROR] char未検出 rx=${rxCharObj != null} tx=${txCharObj != null}');
+      // [UUID失効] マーカーを付与することで、ble_manager.dart が
+      // 「別デバイスに接続した」と判断して自動再スキャンをトリガーできる。
       return AuthFailure(
-        'fe95サービスの005e/005fキャラクタリスティックが見つかりません '
+        '[UUID失効] 別のBLEデバイスに接続されました。'
+        'fe95サービスが見つかりません '
         '(rx=${rxCharObj != null}, tx=${txCharObj != null})\n\n'
         '── 診断ログ ──\n${diagLog.join('\n')}',
       );

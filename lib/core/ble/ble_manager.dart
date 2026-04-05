@@ -149,8 +149,16 @@ class BleManager {
         // firstWhere の結果（Future）に直接 timeout をかけることで確実に打ち切る。
         final freshDevice = await scanForBand9()
             .firstWhere(
-              (d) => d.name.toLowerCase().contains('band') ||
-                  d.name.toLowerCase().contains('mi'),
+              (d) {
+                final name = d.name.toLowerCase();
+                // "mi band"/"mi smart band"/"xiaomi band" など Xiaomi製バンドに特化したフィルター。
+                // 単純な "mi" 含有チェックは "Omi" 等の無関係デバイスに誤検知するため使わない。
+                return name.contains('mi band') ||
+                    name.contains('mi smart band') ||
+                    name.contains('xiaomi band') ||
+                    name.contains('band 9') ||
+                    name.contains('smart band 9');
+              },
               orElse: () => throw Exception('Band 9が見つかりません'),
             )
             .timeout(

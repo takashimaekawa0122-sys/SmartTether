@@ -80,11 +80,14 @@ class BleManager {
   /// iOS では MACアドレスでは接続できないため、
   /// BLEスキャンで Band 9 を見つけてプラットフォーム固有のIDを取得する。
   /// サービスUUIDフィルターなしでスキャンし、すべてのBLEデバイスを返す。
-  Stream<DiscoveredDevice> scanForBand9({Duration timeout = const Duration(seconds: 15)}) {
+  ///
+  /// 注意: Stream.timeout() はイベント間隔のタイムアウトであるため使用しない。
+  /// 呼び出し側で firstWhere().timeout() を使って合計時間を制限すること。
+  Stream<DiscoveredDevice> scanForBand9() {
     return _ble.scanForDevices(
       withServices: [],
       scanMode: ScanMode.lowLatency,
-    ).timeout(timeout, onTimeout: (sink) => sink.close());
+    );
   }
 
   /// MACアドレスまたはデバイスIDを取得して Band 9 に接続する
@@ -121,13 +124,19 @@ class BleManager {
       // ignore: avoid_print
       print('[BleManager] 即切断を検出。スキャンして最新IDで再試行します...');
       try {
-        final freshDevice = await scanForBand9(
-          timeout: const Duration(seconds: 10),
-        ).firstWhere(
-          (d) => d.name.toLowerCase().contains('band') ||
-              d.name.toLowerCase().contains('mi'),
-          orElse: () => throw Exception('Band 9が見つかりません'),
-        );
+        // Stream.timeout はイベント間隔のタイムアウトのため、
+        // 近くに多数のBLEデバイスがある場合にリセットされ続けてハングする。
+        // firstWhere の結果（Future）に直接 timeout をかけることで確実に打ち切る。
+        final freshDevice = await scanForBand9()
+            .firstWhere(
+              (d) => d.name.toLowerCase().contains('band') ||
+                  d.name.toLowerCase().contains('mi'),
+              orElse: () => throw Exception('Band 9が見つかりません'),
+            )
+            .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () => throw Exception('Band 9スキャンタイムアウト（10秒）'),
+            );
         if (_disposed) return firstResult;
         final freshId = freshDevice.id;
         // ignore: avoid_print

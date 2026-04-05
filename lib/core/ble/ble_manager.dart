@@ -373,7 +373,20 @@ class BleManager {
             },
           );
 
-      return await completer!.future;
+      // flutter_reactive_ble iOS既知バグ対策: connectToDeviceがconnected/disconnectedを
+      // 発火させずにconnecting状態で詰まることがある（Issue #582）。
+      // 60秒の保険タイムアウトで必ず処理を完了させる。
+      return await completer!.future.timeout(
+        const Duration(seconds: 60),
+        onTimeout: () {
+          clog('TIMEOUT: 60秒タイムアウト（iOS BLEスタック詰まり）');
+          _updateState(BleConnectionState.error);
+          final diagText = connectLog.isNotEmpty
+              ? '\n\n── 診断ログ ──\n${connectLog.join('\n')}'
+              : '';
+          return BleFailure('接続タイムアウト（60秒）$diagText');
+        },
+      );
     } catch (e) {
       _updateState(BleConnectionState.error);
       return BleFailure('接続開始エラー: $e');
